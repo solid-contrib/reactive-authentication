@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>reactive fetch</title>
+        <script type="module">
+            import { ReactiveFetchManager } from "./ReactiveFetchManager.js"
+            import { DPoPTokenProvider } from "./DPoPTokenProvider.js"
+            import { BearerTokenProvider } from "./BearerTokenProvider.js"
+
+            /* Page functionality */
+            document.addEventListener("DOMContentLoaded", () =>
+                document.querySelectorAll("button").forEach(button =>
+                    button.addEventListener("click", async e =>
+                        await fetch(e.target.value))))
+
+            /* Reactive fetch infrastructure */
+            const dPoPTokenProvider = new DPoPTokenProvider
+            const bearerProvider = new BearerTokenProvider
+
+            dPoPTokenProvider.addEventListener("codeRequired", onCodeRequired)
+            bearerProvider.addEventListener("codeRequired", onCodeRequired)
+
+            new ReactiveFetchManager([bearerProvider, dPoPTokenProvider])
+
+            /* Page dependencies of reactive fetch */
+            async function onCodeRequired(e) {
+                const authorizationCodeResponse = await new Promise(resolve => {
+                    window.addEventListener("message", e => {
+                        // Notify that user interaction is no longer needed
+                        // this.#ui.gotInteraction()
+
+                        e.source.close()
+                        resolve(e.data)
+                    }, {once: true})
+
+                    const authenticationWindow = open(e.detail)
+
+                    // If popup was blocked then request user interaction to open authentication window
+                    if (!authenticationWindow) {
+                        throw new Error("interaction required")
+                        // this.#ui.needInteraction(authenticationUrl)
+                    }
+                })
+
+                e.resolve(authorizationCodeResponse)
+            }
+        </script>
+    </head>
+    <body>
+        <button value="https://echo.free.beeceptor.com/">echo</button>
+        <button value="https://langsamu.solidcommunity.net/settings/">solidcommunity.net (CSS)</button>
+        <button value="https://storage.inrupt.com/d5e2efbd-1dd6-4c45-b6a3-e61a05bb9d49/">PodSpaces (ESS)</button>
+        <button value="https://langsamu.datapod.igrant.io/settings/">datapod.igrant.io (NSS 5.7.4)</button>
+        <button value="https://langsamu.solidweb.app/settings/">solidweb.app (JSS)</button>
+        <button value="https://teamid.live/langsamu/settings/">teamid.live (CSS)</button>
+        <button value="https://langsamu.solidweb.org/settings/">solidweb.org (NSS 6.0.0)</button>
+        <button value="http://localhost:3000/a/profile/">localhost (CSS)</button>
+    </body>
+</html>
