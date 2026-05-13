@@ -8,6 +8,7 @@
             import { ReactiveFetchManager } from "./ReactiveFetchManager.js"
             import { DPoPTokenProvider } from "./DPoPTokenProvider.js"
             import { BearerTokenProvider } from "./BearerTokenProvider.js"
+            import { AuthorizationCodeFlowUI } from "./AuthorizationCodeFlowUI.js"
 
             /* Page functionality */
             document.addEventListener("DOMContentLoaded", () =>
@@ -16,36 +17,15 @@
                         await fetch(e.target.value))))
 
             /* Reactive fetch infrastructure */
+            const ui = new AuthorizationCodeFlowUI
+
             const dPoPTokenProvider = new DPoPTokenProvider
             const bearerProvider = new BearerTokenProvider
 
-            dPoPTokenProvider.addEventListener("codeRequired", onCodeRequired)
-            bearerProvider.addEventListener("codeRequired", onCodeRequired)
+            dPoPTokenProvider.addEventListener("codeRequired", ui.onCodeRequired.bind(ui))
+            bearerProvider.addEventListener("codeRequired", ui.onCodeRequired.bind(ui))
 
             new ReactiveFetchManager([bearerProvider, dPoPTokenProvider])
-
-            /* Page dependencies of reactive fetch */
-            async function onCodeRequired(e) {
-                const authorizationCodeResponse = await new Promise(resolve => {
-                    window.addEventListener("message", e => {
-                        // Notify that user interaction is no longer needed
-                        // this.#ui.gotInteraction()
-
-                        e.source.close()
-                        resolve(e.data)
-                    }, {once: true})
-
-                    const authenticationWindow = open(e.detail)
-
-                    // If popup was blocked then request user interaction to open authentication window
-                    if (!authenticationWindow) {
-                        throw new Error("interaction required")
-                        // this.#ui.needInteraction(authenticationUrl)
-                    }
-                })
-
-                e.resolve(authorizationCodeResponse)
-            }
         </script>
     </head>
     <body>
