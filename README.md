@@ -8,3 +8,9 @@ npx http-server
 ```
 
 then navigate to [localhost:8080](http://localhost:8080) (or wherever it was served).
+
+## History
+
+The paradigm employed here originates in [@langsamu](https://github.com/langsamu)'s research project [Solid Explorer](https://github.com/langsamu/solid-explorer/).
+
+It was later expanded into a robust architecture by [@hellikopter](https://github.com/hellikopter) and [@langsamu](https://github.com/langsamu) in [.NET ReactiveAuthentication](https://github.com/ReactiveAuthentication/ReactiveAuthentication).
