@@ -91,8 +91,6 @@ export class DPoPTokenProvider extends EventTarget {
         await dpop.addProof(new URL(request.url), headers, request.method, tokenResult.access_token)
         headers.set("Authorization", ["DPoP", tokenResult.access_token].join(" "))
 
-        // headers.set("Authorization", ["Bearer", tokenResult.access_token].join(" "))
-
         return new Request(request, {headers})
     }
 }
