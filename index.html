@@ -12,7 +12,7 @@
 
             /* Page functionality: Buttons */
             document.addEventListener("DOMContentLoaded", () =>
-                document.querySelectorAll("button").forEach(button =>
+                document.querySelectorAll("button.fetch").forEach(button =>
                     button.addEventListener("click", async e =>
                         await fetch(e.target.value))))
 
@@ -41,13 +41,13 @@
         </script>
     </head>
     <body>
-        <button value="https://echo.free.beeceptor.com/">echo</button>
-        <button value="https://langsamu.solidcommunity.net/settings/">solidcommunity.net (CSS)</button>
-        <button value="https://storage.inrupt.com/d5e2efbd-1dd6-4c45-b6a3-e61a05bb9d49/">PodSpaces (ESS)</button>
-        <button value="https://langsamu.datapod.igrant.io/settings/">datapod.igrant.io (NSS 5.7.4)</button>
-        <button value="https://langsamu.solidweb.app/settings/">solidweb.app (JSS)</button>
-        <button value="https://teamid.live/langsamu/settings/">teamid.live (CSS)</button>
-        <button value="https://langsamu.solidweb.org/settings/">solidweb.org (NSS 6.0.0)</button>
-        <button value="http://localhost:3000/a/profile/">localhost (CSS)</button>
+        <button class="fetch" value="https://echo.free.beeceptor.com/">echo</button>
+        <button class="fetch" value="https://langsamu.solidcommunity.net/settings/">solidcommunity.net (CSS)</button>
+        <button class="fetch" value="https://storage.inrupt.com/d5e2efbd-1dd6-4c45-b6a3-e61a05bb9d49/">PodSpaces (ESS)</button>
+        <button class="fetch" value="https://langsamu.datapod.igrant.io/settings/">datapod.igrant.io (NSS 5.7.4)</button>
+        <button class="fetch" value="https://langsamu.solidweb.app/settings/">solidweb.app (JSS)</button>
+        <button class="fetch" value="https://teamid.live/langsamu/settings/">teamid.live (CSS)</button>
+        <button class="fetch" value="https://langsamu.solidweb.org/settings/">solidweb.org (NSS 6.0.0)</button>
+        <button class="fetch" value="http://localhost:3000/a/profile/">localhost (CSS)</button>
     </body>
 </html>
