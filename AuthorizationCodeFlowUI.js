@@ -3,17 +3,22 @@ import { Mutex } from "./Mutex.js"
 const authorizationWindowName = "oidcAuthentication"
 
 export class AuthorizationCodeFlowUI {
-    #modal
-    #link
+    #newModal
+    #switchModal
+    #authorizationWindow
     #mutex = new Mutex
+    #authorizationUri
 
     constructor() {
-        this.#modal = document.body.appendChild(document.createElement("dialog"))
-        this.#modal.innerHTML = `<a target="${authorizationWindowName}">x</a>`
-        this.#modal.closedBy = "none"
+        this.#newModal = document.body.appendChild(document.createElement("dialog"))
+        this.#newModal.innerHTML = `User interaction needed to launch authorization code flow in new window. <button>Open new window</button>` // TODO: configurable text
+        this.#newModal.closedBy = "none"
+        this.#newModal.querySelector("button").addEventListener("click", this.#openAuthorizationWindow.bind(this))
 
-        this.#link = this.#modal.querySelector("a")
-        this.#link.addEventListener("click", this.#onLinkClick.bind(this))
+        this.#switchModal = document.body.appendChild(document.createElement("dialog"))
+        this.#switchModal.innerHTML = `There is an ongoing authorization code flow in another window. <button>Switch to ongoing flow</button>` // TODO: configurable text
+        this.#switchModal.closedBy = "none"
+        this.#switchModal.querySelector("button").addEventListener("click", () => this.#authorizationWindow.focus())
     }
 
     async onCodeRequired(codeRequest) {
@@ -21,36 +26,33 @@ export class AuthorizationCodeFlowUI {
         using _ = await this.#mutex.acquire()
 
         // TODO: Formalize code request event shape
-        const authorizationUri = codeRequest.detail
+        this.#authorizationUri = codeRequest.detail
 
         const authorizationCodeResponse = await new Promise(resolve => {
             window.addEventListener("message", message => {
-                this.#interactionNotNeeded()
+                this.#switchModal.close()
                 message.source.close()
                 resolve(message.data)
             }, {once: true})
 
-            const authorizationWindow = open(authorizationUri, authorizationWindowName)
+            this.#openAuthorizationWindow()
 
-            if (authorizationWindow == null) {
-                this.#interactionNeeded(authorizationUri)
+            if (this.#authorizationWindow == null) {
+                this.#interactionNeeded()
             }
         })
 
         codeRequest.resolve(authorizationCodeResponse)
     }
 
-    #interactionNeeded(authorizationUri) {
-        this.#link.href = authorizationUri
-        this.#modal.showModal()
+    #interactionNeeded() {
+        this.#switchModal.close()
+        this.#newModal.showModal()
     }
 
-    #interactionNotNeeded() {
-        this.#modal.close()
-    }
-
-    #onLinkClick() {
-        // TODO: `Disable` link after clicked, re-enable elsewhere when needed
+    #openAuthorizationWindow() {
+        this.#authorizationWindow = open(this.#authorizationUri, authorizationWindowName)
+        this.#newModal.close()
+        this.#switchModal.showModal()
     }
 }
-
