@@ -2,36 +2,39 @@ import { ReactiveAuthenticationClient } from "./ReactiveAuthenticationClient.js"
 import { DPoPTokenProvider } from "./DPoPTokenProvider.js"
 import { BearerTokenProvider } from "./BearerTokenProvider.js"
 
+declare const self: ServiceWorkerGlobalScope
+
 console.debug("reactive-fetch-worker.js")
 
 self.addEventListener("install", onInstall)
 self.addEventListener("activate", onActivate)
 self.addEventListener("fetch", onFetch)
 
-function onInstall(e) {
+function onInstall(e: ExtendableEvent): void {
     e.waitUntil(self.skipWaiting())
 }
 
-function onActivate(e) {
+function onActivate(e: ExtendableEvent): void {
     e.waitUntil(self.clients.claim())
 }
 
-function onFetch(e) {
+async function onFetch(e: FetchEvent): Promise<void> {
     if (!isFetch(e)) return
 
-    e.respondWith(upgrade(e))
+    const client = await self.clients.get(e.clientId)
+    if (client === undefined) return
+
+    e.respondWith(upgrade(e.request, client))
 }
 
-async function upgrade(e) {
-    const client = await self.clients.get(e.clientId)
-
+function upgrade(request: Request, client: Client): Promise<Response> {
     const dPoPTokenProvider = new DPoPTokenProvider(postEventAndWait.bind(undefined, client))
     const bearerProvider = new BearerTokenProvider(postEventAndWait.bind(undefined, client))
 
-    return new ReactiveAuthenticationClient(self.fetch, [bearerProvider, dPoPTokenProvider]).fetch(e.request)
+    return new ReactiveAuthenticationClient(self.fetch, [bearerProvider, dPoPTokenProvider]).fetch(request)
 }
 
-function postEventAndWait(client, e) {
+function postEventAndWait(client: Client, e: URL): Promise<string> {
     return new Promise(resolve => {
         const channel = new MessageChannel()
 
@@ -41,6 +44,6 @@ function postEventAndWait(client, e) {
     })
 }
 
-function isFetch(e) {
+function isFetch(e: FetchEvent): boolean {
     return e.request.destination === ""
 }

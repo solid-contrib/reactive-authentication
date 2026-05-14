@@ -2,7 +2,13 @@
 
 ## Run
 
-Run a web server on the root folder, e.g.
+To compile,
+```batch
+npm install
+npm run build
+```
+
+Then, for the demo, run a web server on the root folder, e.g.
 ```batch
 npx http-server
 ```

@@ -1,0 +1,1 @@
+export type GetCodeCallback = (authorizationUri: URL) => Promise<string>

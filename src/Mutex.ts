@@ -1,8 +1,8 @@
 export class Mutex {
     #tail = Promise.resolve()
 
-    async acquire() {
-        let release
+    async acquire(): Promise<Disposable> {
+        let release = () => {}
 
         // Insert a new link in the chain
         const previous = this.#tail

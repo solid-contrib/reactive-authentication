@@ -4,9 +4,15 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <title>reactive fetch with worker</title>
+        <script type="importmap">
+            {
+              "imports": {
+                "oauth4webapi": "https://cdn.jsdelivr.net/npm/oauth4webapi@3.8.6/+esm"
+              }
+            }
+        </script>
         <script type="module">
-            import { ReactiveFetchWorkerManager } from "./ReactiveFetchWorkerManager.js"
-            import { AuthorizationCodeFlowUI } from "./AuthorizationCodeFlowUI.js"
+            import { AuthorizationCodeFlowUI, ReactiveFetchWorkerManager } from "./dist/mod.js"
 
             /* Page functionality: Buttons */
             document.addEventListener("DOMContentLoaded", () =>

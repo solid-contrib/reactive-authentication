@@ -1,13 +1,15 @@
-import * as oauth from "https://cdn.jsdelivr.net/npm/oauth4webapi@3.8.6/build/index.js"
+import * as oauth from "oauth4webapi"
+import type { GetCodeCallback } from "./GetCodeCallback.js"
+import type { TokenProvider } from "./TokenProvider.js"
 
-export class DPoPTokenProvider {
-    #getCode
+export class DPoPTokenProvider implements TokenProvider {
+    readonly #getCode: GetCodeCallback
 
-    constructor(getCodeCallback) {
+    constructor(getCodeCallback: GetCodeCallback) {
         this.#getCode = getCodeCallback
     }
 
-    async #getIssuer(request) {
+    async #getIssuer(request: Request): Promise<URL> {
         if (request.url.includes(".solidcommunity.net")) {
             return new URL("https://solidcommunity.net")
         } else if (request.url.includes("datapod.igrant.io")) {
@@ -27,15 +29,15 @@ export class DPoPTokenProvider {
         }
     }
 
-    async #getCallback(request) {
+    async #getCallback(request: Request): Promise<string> {
         return "http://localhost:8080/callback.html"
     }
 
-    async matches(request) {
+    async matches(request: Request): Promise<boolean> {
         return true
     }
 
-    async upgrade(request) {
+    async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
 
         // const discoveryResponse = await oauth.discoveryRequest(issuer)
@@ -47,18 +49,21 @@ export class DPoPTokenProvider {
         // const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]})
         const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]}, {[oauth.allowInsecureRequests]: true})
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
+        const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
+        const [registeredResponseType] = clientRegistration.response_types as string[]
+        const clientSecret = clientRegistration.client_secret as string
 
         const dpopKey = await crypto.subtle.generateKey({name: "ECDSA", namedCurve: "P-256"}, true, ["sign"])
-        const dpop = oauth.DPoP(clientRegistration, dpopKey)
+        const dpop = oauth.DPoP({}, dpopKey)
 
         const codeVerifier = oauth.generateRandomCodeVerifier()
         const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier)
 
         // TODO: support prompt=none
-        const authorizationUrl = new URL(authorizationServer.authorization_endpoint)
+        const authorizationUrl = new URL(authorizationServer.authorization_endpoint!)
         authorizationUrl.searchParams.set("client_id", clientRegistration.client_id)
-        authorizationUrl.searchParams.set("redirect_uri", clientRegistration.redirect_uris[0])
-        authorizationUrl.searchParams.set("response_type", clientRegistration.response_types[0])
+        authorizationUrl.searchParams.set("redirect_uri", registeredRedirectUri!)
+        authorizationUrl.searchParams.set("response_type", registeredResponseType!)
         authorizationUrl.searchParams.set("scope", "openid webid")
         // authorizationUrl.searchParams.set("prompt", "consent")
         authorizationUrl.searchParams.set("code_challenge", codeChallenge)
@@ -77,8 +82,8 @@ export class DPoPTokenProvider {
 
         let clientAuth = oauth.None()
         if (clientRegistration.token_endpoint_auth_method === "client_secret_basic") {
-            const authenticationMethod = authenticationMethodFor(authorizationServer.issuer)
-            clientAuth = authenticationMethod(clientRegistration.client_secret)
+            const authenticationMethod = authenticationMethodFor(authorizationServer.issuer!)
+            clientAuth = authenticationMethod(clientSecret)
         }
 
         // const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, codeVerifier, {DPoP: dpop})
@@ -93,7 +98,7 @@ export class DPoPTokenProvider {
 
         const headers = new Headers(request.headers)
 
-        await dpop.addProof(new URL(request.url), headers, request.method, tokenResult.access_token)
+        headers.set("DPoP", await dpop.calculateThumbprint())
         headers.set("Authorization", ["DPoP", tokenResult.access_token].join(" "))
 
         return new Request(request, {headers})
@@ -109,14 +114,14 @@ export class DPoPTokenProvider {
  * @see Original code at https://github.com/panva/oauth4webapi/blob/b914d175a58a1738b65a360dc2f28d6c0f88a720/src/index.ts#L1777
  * @see Spec https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3.1
  */
-function NoUrlEncodeClientSecretBasic(clientSecret) {
+function NoUrlEncodeClientSecretBasic(clientSecret: string): oauth.ClientAuth {
     return function (_, client, __, headers) {
         console.debug("Using non-conforming (no url encoding) client secret basic token authentication")
         headers.set("Authorization", `Basic ${btoa(`${client.client_id}:${clientSecret}`)}`);
     };
 }
 
-function authenticationMethodFor(issuer) {
+function authenticationMethodFor(issuer: string): (clientSecret: string) => oauth.ClientAuth {
     // TODO: Better fingerprinting ESS
     if (issuer.includes("login.inrupt.com")) {
         console.debug("Using token authentication workaround for ESS")

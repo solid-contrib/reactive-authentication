@@ -1,0 +1,30 @@
+{
+  "name": "reactive-authentication-js",
+  "author": "Samu Lang (https://github.com/langsamu)",
+  "main": "dist/mod.js",
+  "type": "module",
+  "types": "./dist/mod.d.ts",
+  "exports": {
+    ".": "./dist/mod.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/langsamu/reactive-authentication-js.git"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "oauth4webapi": "^3"
+  },
+  "devDependencies": {
+    "typescript": "^6"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

@@ -1,8 +1,10 @@
-export class ReactiveFetchManager extends EventTarget {
-    #globalFetch
-    #providers
+import type { TokenProvider } from "./TokenProvider.js"
 
-    constructor(providers) {
+export class ReactiveFetchManager extends EventTarget {
+    readonly #globalFetch: typeof globalThis.fetch
+    readonly #providers: Iterable<TokenProvider>
+
+    constructor(providers: Iterable<TokenProvider>) {
         super()
 
         this.#providers = providers
@@ -11,7 +13,7 @@ export class ReactiveFetchManager extends EventTarget {
         globalThis.fetch = this.#fetch.bind(this)
     }
 
-    async #fetch(input, init) {
+    async #fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
         const request = new Request(input, init)
         const response = await this.#globalFetch.call(undefined, request.clone())
         if (response.status !== 401) {
@@ -27,11 +29,13 @@ export class ReactiveFetchManager extends EventTarget {
         return this.#globalFetch.call(undefined, upgraded)
     }
 
-    async #findProvider(request) {
+    async #findProvider(request: Request): Promise<TokenProvider | undefined> {
         for (const provider of this.#providers) {
             if (await provider.matches(request)) {
                 return provider
             }
         }
+
+        return undefined
     }
 }
