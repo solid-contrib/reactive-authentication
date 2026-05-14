@@ -21,14 +21,13 @@ export class AuthorizationCodeFlowUI {
         this.#switchModal.querySelector("button").addEventListener("click", () => this.#authorizationWindow.focus())
     }
 
-    async onCodeRequired(codeRequest) {
+    async onCodeRequired(authorizationUri) {
         // One flow at a time, fellas
         using _ = await this.#mutex.acquire()
 
-        // TODO: Formalize code request event shape
-        this.#authorizationUri = codeRequest.detail
+        this.#authorizationUri = authorizationUri
 
-        const authorizationCodeResponse = await new Promise(resolve => {
+        return await new Promise(resolve => {
             window.addEventListener("message", message => {
                 this.#switchModal.close()
                 message.source.close()
@@ -41,8 +40,6 @@ export class AuthorizationCodeFlowUI {
                 this.#interactionNeeded()
             }
         })
-
-        codeRequest.resolve(authorizationCodeResponse)
     }
 
     #interactionNeeded() {

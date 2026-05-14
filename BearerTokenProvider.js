@@ -1,10 +1,15 @@
 import * as oauth from "https://cdn.jsdelivr.net/npm/oauth4webapi@3.8.6/build/index.js"
-import { AwaitableEvent } from "./AwaitableEvent.js"
 
 // TODO: Configure properly for insecure localhost only
 const oauthAllowInsecureRequests = true
 
-export class BearerTokenProvider extends EventTarget {
+export class BearerTokenProvider {
+    #getCode
+
+    constructor(getCodeCallback) {
+        this.#getCode = getCodeCallback
+    }
+
     async #getIssuer(request) {
         if (request.url.includes(".solidcommunity.net")) {
             return new URL("https://solidcommunity.net")
@@ -65,7 +70,7 @@ export class BearerTokenProvider extends EventTarget {
         //     authorizationUrl.searchParams.set("nonce", nonce)
         // }
 
-        const authorizationCodeResponse = await new Promise(resolve => this.dispatchEvent(new AwaitableEvent("codeRequired", resolve, {detail: authorizationUrl.toString()})))
+        const authorizationCodeResponse = await this.#getCode(authorizationUrl)
         const authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse))
 
         let clientAuth = oauth.None()

@@ -25,22 +25,19 @@ function onFetch(e) {
 async function upgrade(e) {
     const client = await self.clients.get(e.clientId)
 
-    const dPoPTokenProvider = new DPoPTokenProvider
-    const bearerProvider = new BearerTokenProvider
-
-    dPoPTokenProvider.addEventListener("codeRequired", async e => e.resolve(await postEventAndWait(e, client)))
-    bearerProvider.addEventListener("codeRequired", async e => e.resolve(await postEventAndWait(e, client)))
+    const dPoPTokenProvider = new DPoPTokenProvider(postEventAndWait.bind(undefined, client))
+    const bearerProvider = new BearerTokenProvider(postEventAndWait.bind(undefined, client))
 
     return new ReactiveAuthenticationClient(self.fetch, [bearerProvider, dPoPTokenProvider]).fetch(e.request)
 }
 
-function postEventAndWait(e, client) {
+function postEventAndWait(client, e) {
     return new Promise(resolve => {
         const channel = new MessageChannel()
 
         channel.port1.onmessage = e => resolve(e.data)
 
-        client.postMessage({type: e.type, detail: e.detail}, [channel.port2])
+        client.postMessage(e.toString(), [channel.port2])
     })
 }
 

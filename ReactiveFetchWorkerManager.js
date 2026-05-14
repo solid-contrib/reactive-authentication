@@ -1,6 +1,10 @@
-import { AwaitableEvent } from "./AwaitableEvent.js"
+export class ReactiveFetchWorkerManager {
+    #getCode
 
-export class ReactiveFetchWorkerManager extends EventTarget {
+    constructor(getCodeCallback) {
+        this.#getCode = getCodeCallback
+    }
+
     async register() {
         navigator.serviceWorker.addEventListener("message", this.#onMessage.bind(this))
 
@@ -9,15 +13,6 @@ export class ReactiveFetchWorkerManager extends EventTarget {
     }
 
     async #onMessage(e) {
-        const value = await new Promise(resolve =>
-            this.dispatchEvent(
-                new AwaitableEvent(
-                    e.data.type,
-                    resolve,
-                    {
-                        detail: e.data.detail
-                    })))
-
-        e.ports[0].postMessage(value)
+        e.ports[0].postMessage(await this.#getCode(e.data))
     }
 }

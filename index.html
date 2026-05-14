@@ -31,11 +31,8 @@
             /* Reactive fetch infrastructure */
             const ui = new AuthorizationCodeFlowUI
 
-            const dPoPTokenProvider = new DPoPTokenProvider
-            const bearerProvider = new BearerTokenProvider
-
-            dPoPTokenProvider.addEventListener("codeRequired", ui.onCodeRequired.bind(ui))
-            bearerProvider.addEventListener("codeRequired", ui.onCodeRequired.bind(ui))
+            const dPoPTokenProvider = new DPoPTokenProvider(ui.onCodeRequired.bind(ui))
+            const bearerProvider = new BearerTokenProvider(ui.onCodeRequired.bind(ui))
 
             new ReactiveFetchManager([bearerProvider, dPoPTokenProvider])
         </script>

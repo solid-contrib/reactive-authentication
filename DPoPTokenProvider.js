@@ -1,7 +1,12 @@
 import * as oauth from "https://cdn.jsdelivr.net/npm/oauth4webapi@3.8.6/build/index.js"
-import { AwaitableEvent } from "./AwaitableEvent.js"
 
-export class DPoPTokenProvider extends EventTarget {
+export class DPoPTokenProvider {
+    #getCode
+
+    constructor(getCodeCallback) {
+        this.#getCode = getCodeCallback
+    }
+
     async #getIssuer(request) {
         if (request.url.includes(".solidcommunity.net")) {
             return new URL("https://solidcommunity.net")
@@ -67,7 +72,7 @@ export class DPoPTokenProvider extends EventTarget {
         //     authorizationUrl.searchParams.set("nonce", nonce)
         // }
 
-        const authorizationCodeResponse = await new Promise(resolve => this.dispatchEvent(new AwaitableEvent("codeRequired", resolve, {detail: authorizationUrl.toString()})))
+        const authorizationCodeResponse = await this.#getCode(authorizationUrl)
         const authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse))
 
         let clientAuth = oauth.None()
