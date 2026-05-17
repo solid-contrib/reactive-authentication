@@ -55,7 +55,6 @@ export class DPoPTokenProvider implements TokenProvider {
         const dpop = oauth.DPoP({}, dpopKey)
 
         const codeVerifier = oauth.generateRandomCodeVerifier()
-        const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier)
 
         // TODO: support prompt=none
         const authorizationUrl = new URL(authorizationServer.authorization_endpoint!)
@@ -64,9 +63,16 @@ export class DPoPTokenProvider implements TokenProvider {
         authorizationUrl.searchParams.set("response_type", registeredResponseType!)
         authorizationUrl.searchParams.set("scope", "openid webid")
         // authorizationUrl.searchParams.set("prompt", "consent")
-        authorizationUrl.searchParams.set("code_challenge", codeChallenge)
-        authorizationUrl.searchParams.set("code_challenge_method", "S256")
 
+        if (authorizationServer.code_challenge_methods_supported !== undefined) {
+            if (authorizationServer.code_challenge_methods_supported.includes("S256")) {
+                authorizationUrl.searchParams.set("code_challenge_method", "S256")
+                authorizationUrl.searchParams.set("code_challenge", await oauth.calculatePKCECodeChallenge(codeVerifier))
+            } else {
+                authorizationUrl.searchParams.set("code_challenge_method", "plain")
+                authorizationUrl.searchParams.set("code_challenge", codeVerifier)
+            }
+        }
 
         // igrant (nss) seems to not return nonce
         // let nonce
@@ -84,7 +90,7 @@ export class DPoPTokenProvider implements TokenProvider {
             clientAuth = authenticationMethod(clientSecret)
         }
 
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, codeVerifier, {DPoP: dpop})
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop})
 
         // jwt nonce missing in igrant
         // const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: nonce})
