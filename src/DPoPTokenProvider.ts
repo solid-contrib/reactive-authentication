@@ -40,20 +40,18 @@ export class DPoPTokenProvider implements TokenProvider {
     async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
 
-        // const discoveryResponse = await oauth.discoveryRequest(issuer)
-        const discoveryResponse = await oauth.discoveryRequest(issuer, {[oauth.allowInsecureRequests]: true})
+        const discoveryResponse = await oauth.discoveryRequest(issuer)
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
         const callbackUri = await this.#getCallback(request)
 
-        // const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]})
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]}, {[oauth.allowInsecureRequests]: true})
+        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]})
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
         const clientSecret = clientRegistration.client_secret as string
 
-        const dpopKey = await crypto.subtle.generateKey({name: "ECDSA", namedCurve: "P-256"}, true, ["sign"])
+        const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false})
         const dpop = oauth.DPoP({}, dpopKey)
 
         const codeVerifier = oauth.generateRandomCodeVerifier()
@@ -86,11 +84,7 @@ export class DPoPTokenProvider implements TokenProvider {
             clientAuth = authenticationMethod(clientSecret)
         }
 
-        // const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, codeVerifier, {DPoP: dpop})
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, codeVerifier, {
-            DPoP: dpop,
-            [oauth.allowInsecureRequests]: true
-        })
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, codeVerifier, {DPoP: dpop})
 
         // jwt nonce missing in igrant
         // const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: nonce})
