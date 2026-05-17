@@ -44,7 +44,7 @@
             const dPoPTokenProvider = new DPoPTokenProvider(ui.onCodeRequired.bind(ui))
             const bearerProvider = new BearerTokenProvider(ui.onCodeRequired.bind(ui))
 
-            new ReactiveFetchManager([bearerProvider, dPoPTokenProvider])
+            new ReactiveFetchManager([dPoPTokenProvider])
         </script>
     </head>
     <body>
