@@ -98,7 +98,8 @@ export class DPoPTokenProvider implements TokenProvider {
 
         const headers = new Headers(request.headers)
 
-        headers.set("DPoP", await dpop.calculateThumbprint())
+        // @ts-expect-error internal API
+        await dpop.addProof(new URL(request.url), headers, request.method, tokenResult.access_token) // TODO: Don't use internal API
         headers.set("Authorization", ["DPoP", tokenResult.access_token].join(" "))
 
         return new Request(request, {headers})
