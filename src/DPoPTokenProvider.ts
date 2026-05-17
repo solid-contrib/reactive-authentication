@@ -55,6 +55,7 @@ export class DPoPTokenProvider implements TokenProvider {
         const dpop = oauth.DPoP({}, dpopKey)
 
         const codeVerifier = oauth.generateRandomCodeVerifier()
+        const state = oauth.generateRandomState()
 
         // TODO: support prompt=none
         const authorizationUrl = new URL(authorizationServer.authorization_endpoint!)
@@ -63,6 +64,7 @@ export class DPoPTokenProvider implements TokenProvider {
         authorizationUrl.searchParams.set("response_type", registeredResponseType!)
         authorizationUrl.searchParams.set("scope", "openid webid")
         // authorizationUrl.searchParams.set("prompt", "consent")
+        authorizationUrl.searchParams.set("state", state)
 
         if (authorizationServer.code_challenge_methods_supported !== undefined) {
             if (authorizationServer.code_challenge_methods_supported.includes("S256")) {
@@ -82,7 +84,7 @@ export class DPoPTokenProvider implements TokenProvider {
         // }
 
         const authorizationCodeResponse = await this.#getCode(authorizationUrl)
-        const authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse))
+        const authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
 
         let clientAuth = oauth.None()
         if (clientRegistration.token_endpoint_auth_method === "client_secret_basic") {
