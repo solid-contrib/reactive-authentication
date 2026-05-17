@@ -50,7 +50,6 @@ export class DPoPTokenProvider implements TokenProvider {
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
-        const clientSecret = clientRegistration.client_secret as string
 
         const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false})
         const dpop = oauth.DPoP({}, dpopKey)
@@ -87,13 +86,7 @@ export class DPoPTokenProvider implements TokenProvider {
         const authorizationCodeResponse = await this.#getCode(authorizationUrl)
         const authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
 
-        let clientAuth = oauth.None()
-        if (clientRegistration.token_endpoint_auth_method === "client_secret_basic") {
-            const authenticationMethod = authenticationMethodFor(authorizationServer.issuer!)
-            clientAuth = authenticationMethod(clientSecret)
-        }
-
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop})
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop})
 
         // jwt nonce missing in igrant
         // const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: nonce})
@@ -105,6 +98,17 @@ export class DPoPTokenProvider implements TokenProvider {
         headers.set("Authorization", ["DPoP", tokenResult.access_token].join(" "))
 
         return new Request(request, {headers})
+    }
+
+    private getClientAuth(issuer: string, client: oauth.OmitSymbolProperties<oauth.Client>): oauth.ClientAuth {
+        const clientSecret = client.client_secret as string
+
+        if (client.token_endpoint_auth_method === "client_secret_basic") {
+            const clientSecretBasic = clientSecretBasicFor(issuer)
+            return clientSecretBasic(clientSecret)
+        }
+
+        return oauth.None()
     }
 }
 
@@ -124,13 +128,12 @@ function NoUrlEncodeClientSecretBasic(clientSecret: string): oauth.ClientAuth {
     };
 }
 
-function authenticationMethodFor(issuer: string): (clientSecret: string) => oauth.ClientAuth {
+function clientSecretBasicFor(issuer: string): (clientSecret: string) => oauth.ClientAuth {
     // TODO: Better fingerprinting ESS
     if (issuer.includes("login.inrupt.com")) {
         console.debug("Using token authentication workaround for ESS")
         return NoUrlEncodeClientSecretBasic
     }
 
-    // TODO: Should choose based on client/issuer metadata regardles of ESS
     return oauth.ClientSecretBasic
 }
