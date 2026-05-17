@@ -19,7 +19,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "oauth4webapi": "^3"
+    "oauth4webapi": "^3",
+    "dpop": "^2"
   },
   "devDependencies": {
     "typescript": "^6"

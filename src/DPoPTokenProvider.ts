@@ -1,4 +1,5 @@
 import * as oauth from "oauth4webapi"
+import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
 
@@ -100,8 +101,7 @@ export class DPoPTokenProvider implements TokenProvider {
 
         const headers = new Headers(request.headers)
 
-        // @ts-expect-error internal API
-        await dpop.addProof(new URL(request.url), headers, request.method, tokenResult.access_token) // TODO: Don't use internal API
+        headers.set("DPoP", await DPoP.generateProof(dpopKey, request.url, request.method, undefined, tokenResult.access_token))
         headers.set("Authorization", ["DPoP", tokenResult.access_token].join(" "))
 
         return new Request(request, {headers})
