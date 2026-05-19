@@ -1,4 +1,5 @@
 import { Mutex } from "./Mutex.js"
+import { CodeRequestCancelledError } from "./CodeRequestCancelledError.js"
 
 const authorizationWindowName = "oidcAuthentication"
 
@@ -8,17 +9,20 @@ export class AuthorizationCodeFlowUI {
     readonly #switchModal: HTMLDialogElement
     #authorizationWindow?: WindowProxy | null
     #authorizationUri?: URL
+    #cancelCodeRequest?: (reason?: any) => void
 
     constructor() {
         this.#newModal = document.body.appendChild(document.createElement("dialog"))
-        this.#newModal.innerHTML = `User interaction needed to launch authorization code flow in new window. <button>Open new window</button>` // TODO: configurable text
+        this.#newModal.innerHTML = `User interaction needed to launch authorization code flow in new window. <button>Open new window</button> <button>Cancel</button>` // TODO: configurable text
         this.#newModal.closedBy = "none"
-        this.#newModal.querySelector("button")!.addEventListener("click", this.#openAuthorizationWindow.bind(this))
+        this.#newModal.querySelector("button:first-child")!.addEventListener("click", this.#openAuthorizationWindow.bind(this))
+        this.#newModal.querySelector("button:last-child")!.addEventListener("click", this.#cancel.bind(this))
 
         this.#switchModal = document.body.appendChild(document.createElement("dialog"))
-        this.#switchModal.innerHTML = `There is an ongoing authorization code flow in another window. <button>Switch to ongoing flow</button>` // TODO: configurable text
+        this.#switchModal.innerHTML = `There is an ongoing authorization code flow in another window. <button>Switch to ongoing flow</button> <button>Cancel</button>` // TODO: configurable text
         this.#switchModal.closedBy = "none"
-        this.#switchModal.querySelector("button")!.addEventListener("click", () => this.#authorizationWindow?.focus())
+        this.#switchModal.querySelector("button:first-child")!.addEventListener("click", () => this.#authorizationWindow?.focus())
+        this.#switchModal.querySelector("button:last-child")!.addEventListener("click", this.#cancel.bind(this))
     }
 
     async onCodeRequired(authorizationUri: URL): Promise<string> {
@@ -27,7 +31,9 @@ export class AuthorizationCodeFlowUI {
 
         this.#authorizationUri = authorizationUri
 
-        return await new Promise(resolve => {
+        return await new Promise((resolve, reject) => {
+            this.#cancelCodeRequest = reject
+
             window.addEventListener("message", message => {
                 this.#switchModal.close()
                 this.#authorizationWindow?.close()
@@ -51,5 +57,12 @@ export class AuthorizationCodeFlowUI {
         this.#authorizationWindow = open(this.#authorizationUri, authorizationWindowName)
         this.#newModal.close()
         this.#switchModal.showModal()
+    }
+
+    #cancel() {
+        this.#newModal.close()
+        this.#switchModal.close()
+        this.#authorizationWindow?.close()
+        this.#cancelCodeRequest?.call(undefined, new CodeRequestCancelledError(this.#authorizationUri!))
     }
 }

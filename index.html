@@ -24,18 +24,31 @@
             document.addEventListener("DOMContentLoaded", () =>
                 document.querySelectorAll("button.fetch").forEach(button =>
                     button.addEventListener("click", async e =>
-                        await fetch(e.target.value))))
+                        await f(e.target.value))))
 
             /* Page functionality: Onload */
+            async function f(uri) {
+                console.log(`Start fetch to ${uri}`)
+
+                try {
+                    const response = await fetch(uri)
+                    console.log(`Fetch succeeded to ${uri}`, response)
+                } catch (e) {
+                    console.error(`Fetch failed to ${uri}`, e)
+                }
+            }
+
             document.addEventListener("DOMContentLoaded", async () => {
-                await fetch("https://echo.free.beeceptor.com/")
-                // await fetch("https://langsamu.solidcommunity.net/settings/")
-                await fetch("https://storage.inrupt.com/d5e2efbd-1dd6-4c45-b6a3-e61a05bb9d49/")
-                await fetch("https://langsamu.datapod.igrant.io/settings/")
-                await fetch("https://langsamu.solidweb.app/settings/")
-                await fetch("https://teamid.live/langsamu/settings/")
-                await fetch("https://langsamu.solidweb.org/settings/")
-                // await fetch("http://localhost:3000/a/profile/")
+                await Promise.all([
+                    f("https://echo.free.beeceptor.com/"),
+                    // f("https://langsamu.solidcommunity.net/settings/"),
+                    f("https://storage.inrupt.com/d5e2efbd-1dd6-4c45-b6a3-e61a05bb9d49/"),
+                    f("https://langsamu.datapod.igrant.io/settings/"),
+                    f("https://langsamu.solidweb.app/settings/"),
+                    f("https://teamid.live/langsamu/settings/"),
+                    f("https://langsamu.solidweb.org/settings/"),
+                    // f("http://localhost:3000/a/profile/"),
+                ])
             })
 
             /* Reactive fetch infrastructure */
