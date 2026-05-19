@@ -32,35 +32,36 @@ export class AuthorizationCodeFlowUI {
 
         this.#authorizationUri = authorizationUri
 
-        return await new Promise((resolve, reject) => {
-            signal.throwIfAborted()
+        const {promise: responseFromPopup, reject: cancelCodeRequest, resolve: respondWithCode} = Promise.withResolvers<string>()
+        signal.throwIfAborted()
 
-            this.#cancelCodeRequest = reject
+        this.#cancelCodeRequest = cancelCodeRequest
 
-            const onMessage = (message: MessageEvent) => {
-                signal.removeEventListener("abort", onAbort)
-                this.#switchModal.close()
-                this.#authorizationWindow?.close()
-                resolve(message.data)
-            }
+        const onMessage = (message: MessageEvent) => {
+            signal.removeEventListener("abort", onAbort)
+            this.#switchModal.close()
+            this.#authorizationWindow?.close()
+            respondWithCode(message.data)
+        }
 
-            const onAbort = () => {
-                window.removeEventListener("message", onMessage)
-                this.#newModal.close()
-                this.#switchModal.close()
-                this.#authorizationWindow?.close()
-                reject(signal.reason)
-            }
+        const onAbort = () => {
+            window.removeEventListener("message", onMessage)
+            this.#newModal.close()
+            this.#switchModal.close()
+            this.#authorizationWindow?.close()
+            cancelCodeRequest(signal.reason)
+        }
 
-            signal.addEventListener("abort", onAbort, onlyOnce)
-            window.addEventListener("message", onMessage, onlyOnce)
+        signal.addEventListener("abort", onAbort, onlyOnce)
+        window.addEventListener("message", onMessage, onlyOnce)
 
-            this.#openAuthorizationWindow()
+        this.#openAuthorizationWindow()
 
-            if (this.#authorizationWindow === null) {
-                this.#interactionNeeded()
-            }
-        })
+        if (this.#authorizationWindow === null) {
+            this.#interactionNeeded()
+        }
+
+        return await responseFromPopup
     }
 
     #interactionNeeded() {
