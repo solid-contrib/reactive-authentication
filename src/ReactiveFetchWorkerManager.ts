@@ -15,6 +15,6 @@ export class ReactiveFetchWorkerManager {
     }
 
     async #onMessage(e: MessageEvent<string>) {
-        e.ports[0]?.postMessage(await this.#getCode(new URL(e.data)))
+        e.ports[0]?.postMessage(await this.#getCode(new URL(e.data), null!)) // TODO: Signal?
     }
 }

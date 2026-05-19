@@ -75,7 +75,7 @@ export class BearerTokenProvider implements TokenProvider {
         //     authorizationUrl.searchParams.set("nonce", nonce)
         // }
 
-        const authorizationCodeResponse = await this.#getCode(authorizationUrl)
+        const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
         const authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse))
 
         let clientAuth = oauth.None()

@@ -1,1 +1,1 @@
-export type GetCodeCallback = (authorizationUri: URL) => Promise<string>
+export type GetCodeCallback = (authorizationUri: URL, signal: AbortSignal) => Promise<string>

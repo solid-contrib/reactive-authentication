@@ -2,6 +2,7 @@ import { Mutex } from "./Mutex.js"
 import { CodeRequestCancelledError } from "./CodeRequestCancelledError.js"
 
 const authorizationWindowName = "oidcAuthentication"
+const onlyOnce = {once: true}
 
 export class AuthorizationCodeFlowUI {
     readonly #mutex = new Mutex
@@ -25,20 +26,34 @@ export class AuthorizationCodeFlowUI {
         this.#switchModal.querySelector("button:last-child")!.addEventListener("click", this.#cancel.bind(this))
     }
 
-    async onCodeRequired(authorizationUri: URL): Promise<string> {
+    async onCodeRequired(authorizationUri: URL, signal: AbortSignal): Promise<string> {
         // One flow at a time, fellas
         using _ = await this.#mutex.acquire()
 
         this.#authorizationUri = authorizationUri
 
         return await new Promise((resolve, reject) => {
+            signal.throwIfAborted()
+
             this.#cancelCodeRequest = reject
 
-            window.addEventListener("message", message => {
+            const onMessage = (message: MessageEvent) => {
+                signal.removeEventListener("abort", onAbort)
                 this.#switchModal.close()
                 this.#authorizationWindow?.close()
                 resolve(message.data)
-            }, {once: true})
+            }
+
+            const onAbort = () => {
+                window.removeEventListener("message", onMessage)
+                this.#newModal.close()
+                this.#switchModal.close()
+                this.#authorizationWindow?.close()
+                reject(signal.reason)
+            }
+
+            signal.addEventListener("abort", onAbort, onlyOnce)
+            window.addEventListener("message", onMessage, onlyOnce)
 
             this.#openAuthorizationWindow()
 

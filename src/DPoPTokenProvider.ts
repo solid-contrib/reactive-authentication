@@ -77,7 +77,7 @@ export class DPoPTokenProvider implements TokenProvider {
             }
         }
 
-        const authorizationCodeResponse = await this.#getCode(authorizationUrl)
+        const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
 
         let authorizationCodeParams
         try {
@@ -93,7 +93,7 @@ export class DPoPTokenProvider implements TokenProvider {
                 console.debug("Authorization server requires user interaction, retrying without prompt")
 
                 authorizationUrl.searchParams.delete("prompt")
-                const authorizationCodeResponse = await this.#getCode(authorizationUrl)
+                const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
                 authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
             } else {
                 throw e
