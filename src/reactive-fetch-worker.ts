@@ -35,13 +35,14 @@ function upgrade(request: Request, client: Client): Promise<Response> {
 }
 
 function postEventAndWait(client: Client, e: URL): Promise<string> {
-    return new Promise(resolve => {
-        const channel = new MessageChannel()
+    const {promise, resolve} = Promise.withResolvers<string>()
+    const channel = new MessageChannel()
 
-        channel.port1.onmessage = e => resolve(e.data)
+    channel.port1.onmessage = e => resolve(e.data)
 
-        client.postMessage(e.toString(), [channel.port2])
-    })
+    client.postMessage(e.toString(), [channel.port2])
+
+    return promise
 }
 
 function isFetch(e: FetchEvent): boolean {
