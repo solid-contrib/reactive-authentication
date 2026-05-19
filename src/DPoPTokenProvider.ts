@@ -51,7 +51,7 @@ export class DPoPTokenProvider implements TokenProvider {
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
 
-        const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false})
+        const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false}) // TODO: Align with dpop_signing_alg_values_supported and fallback
         const dpop = oauth.DPoP({}, dpopKey)
 
         const codeVerifier = oauth.generateRandomCodeVerifier()
