@@ -12,12 +12,12 @@ export class AuthorizationCodeFlowUI {
     constructor() {
         this.#newModal = document.body.appendChild(document.createElement("dialog"))
         this.#newModal.innerHTML = `User interaction needed to launch authorization code flow in new window. <button>Open new window</button>` // TODO: configurable text
-        ;(this.#newModal as any).closedBy = "none"
+        this.#newModal.closedBy = "none"
         this.#newModal.querySelector("button")!.addEventListener("click", this.#openAuthorizationWindow.bind(this))
 
         this.#switchModal = document.body.appendChild(document.createElement("dialog"))
         this.#switchModal.innerHTML = `There is an ongoing authorization code flow in another window. <button>Switch to ongoing flow</button>` // TODO: configurable text
-        ;(this.#switchModal as any).closedBy = "none"
+        this.#switchModal.closedBy = "none"
         this.#switchModal.querySelector("button")!.addEventListener("click", () => this.#authorizationWindow?.focus())
     }
 
@@ -30,13 +30,13 @@ export class AuthorizationCodeFlowUI {
         return await new Promise(resolve => {
             window.addEventListener("message", message => {
                 this.#switchModal.close()
-                ;(message.source as Window).close()
+                this.#authorizationWindow?.close()
                 resolve(message.data)
             }, {once: true})
 
             this.#openAuthorizationWindow()
 
-            if (this.#authorizationWindow == null) {
+            if (this.#authorizationWindow === null) {
                 this.#interactionNeeded()
             }
         })
