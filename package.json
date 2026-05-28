@@ -6,7 +6,8 @@
   "type": "module",
   "types": "./dist/mod.d.ts",
   "exports": {
-    ".": "./dist/mod.js"
+    ".": "./dist/mod.js",
+    "./registerElements.js": "./dist/registerElements.js"
   },
   "files": [
     "dist"

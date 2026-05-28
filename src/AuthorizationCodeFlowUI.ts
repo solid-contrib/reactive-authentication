@@ -3,27 +3,54 @@ import { CodeRequestCancelledError } from "./CodeRequestCancelledError.js"
 
 const authorizationWindowName = "oidcAuthentication"
 const onlyOnce = {once: true}
+const html = `
+<style>
+</style>
+<form>
+    <dialog part="new dialog" closedby="none">
+        <p part="new text">
+            <slot name="new-text">User interaction needed to launch authorization code flow in new window.</slot>
+        </p>
+        <button part="new open button" value="open">
+            <slot name="new-open">Open new window</slot>
+        </button>
+        <button part="new cancel button" value="cancel">
+            <slot name="new-cancel">Cancel</slot>
+        </button>
+    </dialog>
+    <dialog part="switch dialog" closedby="none">
+        <p part="switch text"> 
+            <slot name="switch-text">There is an ongoing authorization code flow in another window.</slot>
+        </p>
+        <button part="switch open button" value="focus">
+            <slot name="switch-open">Switch to ongoing flow</slot>
+        </button>
+        <button part="switch cancel button" value="cancel">
+            <slot name="switch-cancel">Cancel</slot>
+        </button>
+    </dialog>
+</form>
+`
 
-export class AuthorizationCodeFlowUI {
+class AuthorizationCodeFlowUI extends HTMLElement {
     readonly #mutex = new Mutex
-    readonly #newModal: HTMLDialogElement
-    readonly #switchModal: HTMLDialogElement
+    #newModal!: HTMLDialogElement
+    #switchModal!: HTMLDialogElement
     #authorizationWindow?: WindowProxy | null
     #authorizationUri?: URL
     #cancelCodeRequest?: (reason?: any) => void
 
-    constructor() {
-        this.#newModal = document.body.appendChild(document.createElement("dialog"))
-        this.#newModal.innerHTML = `User interaction needed to launch authorization code flow in new window. <button>Open new window</button> <button>Cancel</button>` // TODO: configurable text
-        this.#newModal.closedBy = "none"
-        this.#newModal.querySelector("button:first-child")!.addEventListener("click", this.#openAuthorizationWindow.bind(this))
-        this.#newModal.querySelector("button:last-child")!.addEventListener("click", this.#cancel.bind(this))
+    connectedCallback() {
+        const template = this.ownerDocument.createElement("template")
+        template.innerHTML = html
 
-        this.#switchModal = document.body.appendChild(document.createElement("dialog"))
-        this.#switchModal.innerHTML = `There is an ongoing authorization code flow in another window. <button>Switch to ongoing flow</button> <button>Cancel</button>` // TODO: configurable text
-        this.#switchModal.closedBy = "none"
-        this.#switchModal.querySelector("button:first-child")!.addEventListener("click", () => this.#authorizationWindow?.focus())
-        this.#switchModal.querySelector("button:last-child")!.addEventListener("click", this.#cancel.bind(this))
+        const shadow = this.attachShadow({mode: "closed"})
+        shadow.appendChild(this.ownerDocument.importNode(template.content, true))
+
+        this.#newModal = shadow.querySelector(`dialog[part *= "new"]`)!
+        this.#switchModal = shadow.querySelector(`dialog[part *= "switch"]`)!
+
+        shadow.querySelector("form")!.addEventListener("submit", this.#onSubmit.bind(this))
     }
 
     async onCodeRequired(authorizationUri: URL, signal: AbortSignal): Promise<string> {
@@ -45,7 +72,7 @@ export class AuthorizationCodeFlowUI {
         }
 
         const onAbort = () => {
-            window.removeEventListener("message", onMessage)
+            this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
             this.#newModal.close()
             this.#switchModal.close()
             this.#authorizationWindow?.close()
@@ -53,7 +80,7 @@ export class AuthorizationCodeFlowUI {
         }
 
         signal.addEventListener("abort", onAbort, onlyOnce)
-        window.addEventListener("message", onMessage, onlyOnce)
+        this.ownerDocument.defaultView?.addEventListener("message", onMessage, onlyOnce)
 
         this.#openAuthorizationWindow()
 
@@ -62,6 +89,22 @@ export class AuthorizationCodeFlowUI {
         }
 
         return await responseFromPopup
+    }
+
+    #onSubmit(e: SubmitEvent) {
+        e.preventDefault()
+
+        switch ((e.submitter as HTMLButtonElement).value) {
+            case "open":
+                this.#openAuthorizationWindow()
+                break
+            case "focus":
+                this.#authorizationWindow?.focus()
+                break
+            case "cancel":
+                this.#cancel()
+                break
+        }
     }
 
     #interactionNeeded() {
@@ -82,3 +125,5 @@ export class AuthorizationCodeFlowUI {
         this.#cancelCodeRequest?.call(undefined, new CodeRequestCancelledError(this.#authorizationUri!))
     }
 }
+
+customElements.define("authorization-code-flow-ui", AuthorizationCodeFlowUI)
