@@ -1,0 +1,43 @@
+name: Continuous Integration (CI)
+
+on:
+  push:
+    branches:
+      - "**"
+
+permissions:
+    contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - run: npm i
+      - run: npm audit --omit=dev --audit-level=moderate
+  test:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - run: npm i
+      - run: npx tsc
+
+  summary:
+    if: always()
+    needs: [audit, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          if [[ "${{ needs.audit.result }}" != "success" ]] || [[ "${{ needs.test.result }}" != "success" ]] || [[ "${{ needs.docs.result }}" != "success" ]]; then
+            exit 1
+          fi
