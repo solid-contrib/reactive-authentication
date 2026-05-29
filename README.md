@@ -1,4 +1,10 @@
-# Reactive `fetch` in JavaScript
+# Reactive authentication
+
+[![Test Workflow](https://github.com/solid-contrib/reactive-authentication/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/solid-contrib/reactive-authentication/actions/workflows/ci.yml?query=branch%3Amain)
+[![npm](https://img.shields.io/npm/v/@solid/reactive-authentication)](https://www.npmjs.com/package/@solid/reactive-authentication)
+
+A reactive authentication library supporting Solid OIDC.
+
 
 ## Run
 
@@ -14,6 +20,7 @@ npx http-server
 ```
 
 then navigate to [localhost:8080](http://localhost:8080) (or wherever it was served).
+
 
 ## History
 
