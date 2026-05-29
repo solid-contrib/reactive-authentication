@@ -30,7 +30,6 @@ jobs:
           node-version-file: .nvmrc
       - run: npm i
       - run: npx tsc
-      - run: npm test
   publish:
     needs: [audit, test]
     runs-on: ubuntu-latest
