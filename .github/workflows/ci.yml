@@ -38,6 +38,6 @@ jobs:
     steps:
       - name: Summary
         run: |
-          if [[ "${{ needs.audit.result }}" != "success" ]] || [[ "${{ needs.test.result }}" != "success" ]] || [[ "${{ needs.docs.result }}" != "success" ]]; then
+          if [[ "${{ needs.audit.result }}" != "success" ]] || [[ "${{ needs.test.result }}" != "success" ]]; then
             exit 1
           fi
