@@ -1,0 +1,12 @@
+{
+    "out": "./_site",
+    "highlightLanguages": [
+        "ts",
+        "javascript",
+        "html",
+        "css"
+    ],
+    "plugin": [
+        "typedoc-plugin-mdn-links"
+    ]
+}

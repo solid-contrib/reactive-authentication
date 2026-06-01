@@ -30,6 +30,8 @@
     "dpop": "^2"
   },
   "devDependencies": {
+    "typedoc": "^0.28.18",
+    "typedoc-plugin-mdn-links": "^5.1.1",
     "typescript": "^6"
   },
   "engines": {
