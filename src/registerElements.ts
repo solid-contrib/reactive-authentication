@@ -1,1 +1,1 @@
-import "./AuthorizationCodeFlowUI.js"
+import "./AuthorizationCodeFlow.js"

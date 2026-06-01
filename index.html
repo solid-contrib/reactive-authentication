@@ -53,11 +53,11 @@
             })
 
             /* Reactive fetch infrastructure */
-            const ui = document.querySelector("authorization-code-flow-ui")
+            const ui = document.querySelector("authorization-code-flow")
             const callbackUri = new URL("/callback.html", location.href).toString()
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.onCodeRequired.bind(ui))
-            const bearerProvider = new BearerTokenProvider(ui.onCodeRequired.bind(ui))
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui))
+            const bearerProvider = new BearerTokenProvider(ui.getCode.bind(ui))
 
             new ReactiveFetchManager([dPoPTokenProvider])
         </script>
@@ -71,13 +71,13 @@
         <button class="fetch" value="https://teamid.live/langsamu/settings/">teamid.live (CSS)</button>
         <button class="fetch" value="https://langsamu.solidweb.org/settings/">solidweb.org (NSS 6.0.0)</button>
         <button class="fetch" value="http://localhost:3000/a/profile/">localhost (CSS)</button>
-        <authorization-code-flow-ui>
+        <authorization-code-flow>
             <span slot="new-text">USER INTERACTION NEEDED TO LAUNCH AUTHORIZATION CODE FLOW IN NEW WINDOW.</span>
             <span slot="new-open">OPEN</span>
             <span slot="new-cancel">CANCEL OPEN</span>
             <span slot="switch-text">THERE IS AN ONGOING AUTHORIZATION CODE FLOW IN ANOTHER WINDOW.</span>
             <span slot="switch-open">SWITCH</span>
             <span slot="switch-cancel">CANCEL SWITCH</span>
-        </authorization-code-flow-ui>
+        </authorization-code-flow>
     </body>
 </html>

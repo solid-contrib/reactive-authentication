@@ -38,7 +38,7 @@ const html = `
  * Put on an HTML page and connect to a token provider to implement the Authorization Code Flow using a popup.
  *
  * @remarks
- * See the {@link onCodeRequired} method for integrating this element into your application.
+ * See the {@link getCode} method for integrating this element into your application.
  *
  * The appearance of this web component can be customized from the hosting HTML by using {@link https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/::part CSS parts}.
  * The following parts are available:
@@ -63,26 +63,26 @@ const html = `
  * @example Minimal usage
  * ```html
  * <script src="https://unpkg.com/@solid/reactive-authentication/dist/registerElements.js"></script>
- * <authorization-code-flow-ui></authorization-code-flow-ui>
+ * <authorization-code-flow></authorization-code-flow>
  * ```
  *
  * @example Customizing text using slots
  * Any of the named slots can be used to customize the text shown in the dialogs:
  * ```html
- * <authorization-code-flow-ui>
+ * <authorization-code-flow>
  *   <span slot="new-text">text of first (new) dialog</span>
  *   <span slot="new-open">text of first (new) dialog open button</span>
  *   <span slot="new-cancel">text of first (new) dialog cancel button</span>
  *   <span slot="switch-text">text of second (switch) dialog</span>
  *   <span slot="switch-open">text of second (switch) dialog open button</span>
  *   <span slot="switch-cancel">text of second (switch) dialog cancel button</span>
- * </authorization-code-flow-ui>
+ * </authorization-code-flow>
  * ```
  *
  * @example Customizing appearance using CSS parts
  * CSS on the page hosting this web component can be used to customize the appearance of the elements that constitute its user interface:
  * ```html
- * <authorization-code-flow-ui></authorization-code-flow-ui>
+ * <authorization-code-flow></authorization-code-flow>
  * <style>
  *   authorization-code-flow::part(new dialog) {
  *     border: 1px solid red;
@@ -118,7 +118,7 @@ const html = `
  * </style>
  * ```
  */
-export class AuthorizationCodeFlowUI extends HTMLElement {
+export class AuthorizationCodeFlow extends HTMLElement {
     readonly #mutex = new Mutex
     #newModal!: HTMLDialogElement
     #switchModal!: HTMLDialogElement
@@ -152,7 +152,7 @@ export class AuthorizationCodeFlowUI extends HTMLElement {
      *
      * @example Using manually
      * ```html
-     * <authorization-code-flow-ui></authorization-code-flow-ui>
+     * <authorization-code-flow></authorization-code-flow>
      * <script>
      *   const authorizationUri = new URL("http://example.com/authorize")
      *   const ui = document.querySelector("authorization-code-flow")
@@ -164,7 +164,7 @@ export class AuthorizationCodeFlowUI extends HTMLElement {
      *
      * @example Using with a token provider
      * ```html
-     * <authorization-code-flow-ui></authorization-code-flow-ui>
+     * <authorization-code-flow></authorization-code-flow>
      * <script>
      *   const callbackUri = "http://localhost:8080/callback.html"
      *   const ui = document.querySelector("authorization-code-flow")
@@ -174,7 +174,7 @@ export class AuthorizationCodeFlowUI extends HTMLElement {
      * </script>
      * ```
      */
-    async onCodeRequired(authorizationUri: URL, signal: AbortSignal): Promise<string> {
+    async getCode(authorizationUri: URL, signal: AbortSignal): Promise<string> {
         // One flow at a time, fellas
         using _ = await this.#mutex.acquire()
 
@@ -247,4 +247,4 @@ export class AuthorizationCodeFlowUI extends HTMLElement {
     }
 }
 
-customElements.define("authorization-code-flow-ui", AuthorizationCodeFlowUI)
+customElements.define("authorization-code-flow", AuthorizationCodeFlow)

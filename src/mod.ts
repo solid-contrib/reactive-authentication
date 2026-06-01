@@ -1,4 +1,4 @@
-export * from "./AuthorizationCodeFlowUI.js"
+export * from "./AuthorizationCodeFlow.js"
 export * from "./BearerTokenProvider.js"
 export * from "./DPoPTokenProvider.js"
 export * from "./ReactiveFetchManager.js"
