@@ -54,8 +54,9 @@
 
             /* Reactive fetch infrastructure */
             const ui = document.querySelector("authorization-code-flow-ui")
+            const callbackUri = new URL("/callback.html", location.href).toString()
 
-            const dPoPTokenProvider = new DPoPTokenProvider(ui.onCodeRequired.bind(ui))
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.onCodeRequired.bind(ui))
             const bearerProvider = new BearerTokenProvider(ui.onCodeRequired.bind(ui))
 
             new ReactiveFetchManager([dPoPTokenProvider])

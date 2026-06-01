@@ -5,9 +5,11 @@ import type { TokenProvider } from "./TokenProvider.js"
 
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
+    readonly #callbackUri: string
 
-    constructor(getCodeCallback: GetCodeCallback) {
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback) {
         this.#getCode = getCodeCallback
+        this.#callbackUri = callbackUri
     }
 
     async #getIssuer(request: Request): Promise<URL> {
@@ -30,10 +32,6 @@ export class DPoPTokenProvider implements TokenProvider {
         }
     }
 
-    async #getCallback(request: Request): Promise<string> {
-        return "http://localhost:8080/callback.html"
-    }
-
     async matches(request: Request): Promise<boolean> {
         return true
     }
@@ -44,9 +42,7 @@ export class DPoPTokenProvider implements TokenProvider {
         const discoveryResponse = await oauth.discoveryRequest(issuer, {signal: request.signal})
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
-        const callbackUri = await this.#getCallback(request)
-
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]}, {signal: request.signal})
+        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal: request.signal})
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
@@ -100,7 +96,7 @@ export class DPoPTokenProvider implements TokenProvider {
             }
         }
 
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal: request.signal})
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal: request.signal})
 
         const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
 
