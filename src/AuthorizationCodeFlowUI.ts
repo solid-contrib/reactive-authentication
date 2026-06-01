@@ -47,8 +47,8 @@ class AuthorizationCodeFlowUI extends HTMLElement {
         const shadow = this.attachShadow({mode: "closed"})
         shadow.appendChild(this.ownerDocument.importNode(template.content, true))
 
-        this.#newModal = shadow.querySelector(`dialog[part *= "new"]`)!
-        this.#switchModal = shadow.querySelector(`dialog[part *= "switch"]`)!
+        this.#newModal = shadow.querySelector("dialog[part *= 'new']")!
+        this.#switchModal = shadow.querySelector("dialog[part *= 'switch']")!
 
         shadow.querySelector("form")!.addEventListener("submit", this.#onSubmit.bind(this))
     }
