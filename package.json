@@ -2,6 +2,11 @@
   "name": "@solid/reactive-authentication",
   "version": "0.1.1",
   "author": "Samu Lang (https://github.com/langsamu)",
+  "contributors": [
+    "Matthieu Bosquet (https://github.com/matthieubosquet)",
+    "Samu Lang (https://github.com/langsamu)",
+    "Jesse Wright (https://github.com/jeswr)"
+  ],
   "main": "dist/mod.js",
   "type": "module",
   "types": "./dist/mod.d.ts",
