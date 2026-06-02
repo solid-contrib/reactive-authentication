@@ -13,13 +13,7 @@
             }
         </script>
         <script type="module">
-            import {
-                BearerTokenProvider,
-                DPoPTokenProvider,
-                ReactiveFetchManager
-            } from "./dist/mod.js"
-
-            import "./dist/registerElements.js"
+            import { DPoPTokenProvider, ReactiveFetchManager } from "./dist/mod.js"
 
             /* Page functionality: Buttons */
             document.addEventListener("DOMContentLoaded", () =>
@@ -57,7 +51,6 @@
             const callbackUri = new URL("/callback.html", location.href).toString()
 
             const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui))
-            const bearerProvider = new BearerTokenProvider(ui.getCode.bind(ui))
 
             new ReactiveFetchManager([dPoPTokenProvider])
         </script>
