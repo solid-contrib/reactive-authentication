@@ -1,4 +1,4 @@
-export class ReactiveFetchError extends Error {
+export class ReactiveAuthenticationError extends Error {
     constructor(message?: string, cause?: any) {
         super(message)
         this.name = "ReactiveFetchError"
