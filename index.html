@@ -13,7 +13,7 @@
             }
         </script>
         <script type="module">
-            import { DPoPTokenProvider, issuerFrom, ReactiveFetchManager } from "./dist/mod.js"
+            import { DPoPTokenProvider, ReactiveFetchManager } from "./dist/mod.js"
 
             /* Page functionality: Buttons */
             document.addEventListener("DOMContentLoaded", () =>
@@ -47,21 +47,22 @@
             })
 
             /* Reactive fetch infrastructure */
-            const mapping = [
-                {storage: /.solidcommunity.net/, idp: "https://solidcommunity.net"},
-                {storage: /datapod.igrant.io/, idp: "https://datapod.igrant.io"},
-                {storage: /.solidweb.app/, idp: "https://solidweb.app"},
-                {storage: /storage.inrupt.com/, idp: "https://login.inrupt.com"},
-                {storage: /teamid.live/, idp: "https://teamid.live"},
-                {storage: /.solidweb.org/, idp: "https://solidweb.org"},
-                {storage: /.privatedatapod.com/, idp: "https://privatedatapod.com"},
-                {storage: /localhost:3000/, idp: "http://localhost:3000"},
-            ]
+            // const mapping = [
+            //     {storage: /.solidcommunity.net/, idp: "https://solidcommunity.net"},
+            //     {storage: /datapod.igrant.io/, idp: "https://datapod.igrant.io"},
+            //     {storage: /.solidweb.app/, idp: "https://solidweb.app"},
+            //     {storage: /storage.inrupt.com/, idp: "https://login.inrupt.com"},
+            //     {storage: /teamid.live/, idp: "https://teamid.live"},
+            //     {storage: /.solidweb.org/, idp: "https://solidweb.org"},
+            //     {storage: /.privatedatapod.com/, idp: "https://privatedatapod.com"},
+            //     {storage: /localhost:3000/, idp: "http://localhost:3000"},
+            // ]
 
             const ui = document.querySelector("authorization-code-flow")
+            const issuerUi = document.querySelector("idp-picker")
             const callbackUri = new URL("/callback.html", location.href).toString()
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerFrom(mapping))
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerUi.getIssuer.bind(issuerUi))
 
             new ReactiveFetchManager([dPoPTokenProvider])
         </script>
@@ -84,5 +85,15 @@
             <span slot="switch-open">SWITCH</span>
             <span slot="switch-cancel">CANCEL SWITCH</span>
         </authorization-code-flow>
+        <idp-picker>
+            <option value="https://solidcommunity.net"></option>
+            <option value="https://datapod.igrant.io"></option>
+            <option value="https://solidweb.app"></option>
+            <option value="https://login.inrupt.com"></option>
+            <option value="https://teamid.live"></option>
+            <option value="https://solidweb.org"></option>
+            <option value="https://privatedatapod.com"></option>
+            <option value="http://localhost:3000"></option>
+        </idp-picker>
     </body>
 </html>
