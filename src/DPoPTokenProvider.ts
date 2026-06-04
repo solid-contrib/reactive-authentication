@@ -2,34 +2,17 @@ import * as oauth from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
+import type { GetIssuerCallback } from "./GetIssuerCallback.js"
 
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
+    readonly #getIssuer: GetIssuerCallback
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback) {
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback) {
         this.#getCode = getCodeCallback
         this.#callbackUri = callbackUri
-    }
-
-    async #getIssuer(request: Request): Promise<URL> {
-        if (request.url.includes(".solidcommunity.net")) {
-            return new URL("https://solidcommunity.net")
-        } else if (request.url.includes("datapod.igrant.io")) {
-            return new URL("https://datapod.igrant.io")
-        } else if (request.url.includes(".solidweb.app")) {
-            return new URL("https://solidweb.app")
-        } else if (request.url.includes("storage.inrupt.com")) {
-            return new URL("https://login.inrupt.com")
-        } else if (request.url.includes("teamid.live")) {
-            return new URL("https://teamid.live")
-        } else if (request.url.includes(".solidweb.org")) {
-            return new URL("https://solidweb.org")
-        } else if (request.url.includes("localhost:3000")) {
-            return new URL("http://localhost:3000")
-        } else {
-            throw new Error(`Unknown issuer ${request.url}`)
-        }
+        this.#getIssuer = getIssuerCallback
     }
 
     async matches(request: Request): Promise<boolean> {

@@ -13,7 +13,7 @@
             }
         </script>
         <script type="module">
-            import { DPoPTokenProvider, ReactiveFetchManager } from "./dist/mod.js"
+            import { DPoPTokenProvider, issuerFrom, ReactiveFetchManager } from "./dist/mod.js"
 
             /* Page functionality: Buttons */
             document.addEventListener("DOMContentLoaded", () =>
@@ -47,10 +47,21 @@
             })
 
             /* Reactive fetch infrastructure */
+            const mapping = [
+                {storage: /.solidcommunity.net/, idp: "https://solidcommunity.net"},
+                {storage: /datapod.igrant.io/, idp: "https://datapod.igrant.io"},
+                {storage: /.solidweb.app/, idp: "https://solidweb.app"},
+                {storage: /storage.inrupt.com/, idp: "https://login.inrupt.com"},
+                {storage: /teamid.live/, idp: "https://teamid.live"},
+                {storage: /.solidweb.org/, idp: "https://solidweb.org"},
+                {storage: /.privatedatapod.com/, idp: "https://privatedatapod.com"},
+                {storage: /localhost:3000/, idp: "http://localhost:3000"},
+            ]
+
             const ui = document.querySelector("authorization-code-flow")
             const callbackUri = new URL("/callback.html", location.href).toString()
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui))
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerFrom(mapping))
 
             new ReactiveFetchManager([dPoPTokenProvider])
         </script>
