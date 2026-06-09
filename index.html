@@ -64,7 +64,7 @@
 
             const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerUi.getIssuer.bind(issuerUi))
 
-            new ReactiveFetchManager([dPoPTokenProvider])
+            new ReactiveFetchManager([dPoPTokenProvider]).registerGlobally()
         </script>
     </head>
     <body>

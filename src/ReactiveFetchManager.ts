@@ -10,7 +10,14 @@ export class ReactiveFetchManager extends EventTarget {
         this.#providers = providers
 
         this.#globalFetch = globalThis.fetch
-        globalThis.fetch = this.#fetch.bind(this)
+    }
+
+    registerGlobally() {
+        globalThis.fetch = this.fetch
+    }
+
+    get fetch(): typeof globalThis.fetch {
+        return this.#fetch.bind(this)
     }
 
     async #fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
