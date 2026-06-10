@@ -64,7 +64,6 @@ const html = `
  *
  * @example Minimal usage
  * ```html
- * <script src="https://unpkg.com/@solid/reactive-authentication/dist/registerElements.js"></script>
  * <authorization-code-flow></authorization-code-flow>
  * ```
  *
@@ -143,7 +142,7 @@ export class AuthorizationCodeFlow extends HTMLElement {
     }
 
     /**
-     * a {@link GetCodeCallback} that provides an authorization code by directing the user to the {@link authorizationUri authorization endpoint URI} in a popup and waiting for the code in a redirect back.
+     * a {@link GetCodeCallback} that provides an authorization code by directing the user to the authorization endpoint URI in a popup and waiting for the code in a redirect back.
      *
      * @remarks Only one flow runs at a time. Any number of calls
      *
