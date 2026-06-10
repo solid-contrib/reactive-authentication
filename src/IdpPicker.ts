@@ -93,5 +93,3 @@ export class IdpPicker extends HTMLElement {
         return await promise
     }
 }
-
-customElements.define("idp-picker", IdpPicker)

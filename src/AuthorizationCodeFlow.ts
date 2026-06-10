@@ -38,6 +38,8 @@ const html = `
  * Put on an HTML page and connect to a token provider to implement the Authorization Code Flow using a popup.
  *
  * @remarks
+ * This element is not {@link customElements.define defined} when importing the module. Import {@link registerElements} to define it.
+ *
  * See the {@link getCode} method for integrating this element into your application.
  *
  * The appearance of this web component can be customized from the hosting HTML by using {@link https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/::part CSS parts}.
@@ -246,5 +248,3 @@ export class AuthorizationCodeFlow extends HTMLElement {
         this.#cancelCodeRequest?.call(undefined, new CodeRequestCancelledError(this.#authorizationUri!))
     }
 }
-
-customElements.define("authorization-code-flow", AuthorizationCodeFlow)

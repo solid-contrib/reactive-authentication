@@ -11,8 +11,13 @@
   "type": "module",
   "types": "./dist/mod.d.ts",
   "exports": {
-    ".": "./dist/mod.js"
+    ".": "./dist/mod.js",
+    "./registerElements": "./dist/registerElements.js"
   },
+  "sideEffects": [
+    "./dist/registerElements.js",
+    "./dist/reactive-fetch-worker.js"
+  ],
   "files": [
     "dist"
   ],
