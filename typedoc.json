@@ -4,7 +4,8 @@
         "ts",
         "javascript",
         "html",
-        "css"
+        "css",
+        "batch"
     ],
     "plugin": [
         "typedoc-plugin-mdn-links"

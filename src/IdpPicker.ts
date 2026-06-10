@@ -38,12 +38,21 @@ const html = `
 </dialog>
 `
 
+/**
+ * A web component (custom HTML element) that prompts the user for the URI of the authorization server (identity provider) to use for a request.
+ *
+ * @remarks
+ * This element is not {@link customElements.define defined} when importing the module. Import {@link registerElements} to define it.
+ *
+ * See the {@link getIssuer} method for integrating this element into your application.
+ */
 export class IdpPicker extends HTMLElement {
     readonly #mutex = new Mutex
     #dialog!: HTMLDialogElement
     #input!: HTMLInputElement
     #code!: HTMLElement
 
+    /** @ignore */
     connectedCallback() {
         const template = this.ownerDocument.createElement("template")
         template.innerHTML = html
