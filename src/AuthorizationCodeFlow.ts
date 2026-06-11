@@ -194,7 +194,13 @@ export class AuthorizationCodeFlow extends HTMLElement {
             this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
             signal.removeEventListener("abort", onAbort)
             this.#switchModal.close()
-            this.#authorizationWindow?.close()
+
+            // Keep the popup open so the interactive retry navigates this named window,
+            // instead of opening a new one that popup blockers would stop.
+            if (!needsInteraction(message.data)) {
+                this.#authorizationWindow?.close()
+            }
+
             respondWithCode(message.data)
         }
 
@@ -250,5 +256,20 @@ export class AuthorizationCodeFlow extends HTMLElement {
         this.#switchModal.close()
         this.#authorizationWindow?.close()
         this.#cancelCodeRequest?.call(undefined, new CodeRequestCancelledError(this.#authorizationUri!))
+    }
+}
+
+/**
+ * Whether the authorization server answered a silent attempt by asking for user interaction.
+ *
+ * @remarks These are the errors that token providers retry interactively. Anything else, an authorization code or a terminal error such as `access_denied`, ends the flow.
+ */
+function needsInteraction(authorizationResponse: unknown): boolean {
+    try {
+        const error = new URL(authorizationResponse as string).searchParams.get("error")
+
+        return error === "interaction_required" || error === "consent_required" || error === "login_required"
+    } catch {
+        return false
     }
 }
