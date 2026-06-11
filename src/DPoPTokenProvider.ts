@@ -69,6 +69,30 @@ export class DPoPTokenProvider implements TokenProvider {
     }
 
     /**
+     * Marks the cached session stale when the access token attached to the
+     * request was rejected by the resource server (still 401 after an upgrade):
+     * revoked, invalidated early, or expired without a server-reported
+     * lifetime. The next {@link upgrade} then renews the session — refresh
+     * grant first, new authorization-code flow as fallback — instead of
+     * replaying the rejected token.
+     */
+    async invalidate(request: Request): Promise<void> {
+        const issuer = await this.#getIssuer(request)
+        const pending = this.#sessions.get(issuer.href)
+        if (pending === undefined) {
+            return
+        }
+
+        const session = await pending.catch(() => undefined)
+
+        // Only when the rejected token is still the cached one — a concurrent
+        // renewal may already have replaced it.
+        if (session !== undefined && request.headers.get("Authorization") === `DPoP ${session.accessToken}`) {
+            session.expiresAt = 0
+        }
+    }
+
+    /**
      * Returns the cached session for the issuer, renewing it when expired and
      * establishing it when absent. A failed flow is not cached, so the next
      * upgrade retries.

@@ -32,8 +32,19 @@ export class ReactiveFetchManager extends EventTarget {
             return response
         }
 
-        const upgraded = await provider.upgrade(request)
-        return this.#globalFetch.call(undefined, upgraded)
+        const upgraded = await provider.upgrade(request.clone())
+        const upgradedResponse = await this.#globalFetch.call(undefined, upgraded)
+        if (upgradedResponse.status !== 401 || provider.invalidate === undefined) {
+            return upgradedResponse
+        }
+
+        // The credentials we attached were rejected. Mark them stale and retry
+        // once with renewed ones; if those are rejected too, give up and let the
+        // caller see the 401 (bounded — never a loop). Cancel the discarded
+        // response's body so the connection can be reused (undici keep-alive).
+        await upgradedResponse.body?.cancel().catch(() => undefined)
+        await provider.invalidate(upgraded)
+        return this.#globalFetch.call(undefined, await provider.upgrade(request))
     }
 
     async #findProvider(request: Request): Promise<TokenProvider | undefined> {
