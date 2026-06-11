@@ -187,6 +187,14 @@ export class AuthorizationCodeFlow extends HTMLElement {
         this.#cancelCodeRequest = cancelCodeRequest
 
         const onMessage = (message: MessageEvent) => {
+            // Only the authorization popup may end the flow. Anything else on this
+            // window (other components, extensions, a hostile frame) must neither
+            // resolve the flow early nor spoof an authorization response.
+            if (message.source !== this.#authorizationWindow) {
+                return
+            }
+
+            this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
             signal.removeEventListener("abort", onAbort)
             this.#switchModal.close()
 
@@ -213,7 +221,9 @@ export class AuthorizationCodeFlow extends HTMLElement {
         }
 
         signal.addEventListener("abort", onAbort, onlyOnce)
-        this.ownerDocument.defaultView?.addEventListener("message", onMessage, onlyOnce)
+        // Not `once`: the listener filters by source, so it must survive unrelated
+        // messages. It removes itself when the popup answers (or on abort).
+        this.ownerDocument.defaultView?.addEventListener("message", onMessage)
 
         this.#openAuthorizationWindow()
 
