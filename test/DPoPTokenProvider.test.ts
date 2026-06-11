@@ -158,6 +158,29 @@ describe("DPoPTokenProvider refresh tokens", () => {
         expect(refreshRequests[1]?.get("refresh_token")).not.toBe(refreshRequests[0]?.get("refresh_token"))
     })
 
+    it("retries the refresh grant once when the server demands a DPoP nonce", async () => {
+        as = await createFakeAuthorizationServer({
+            issueRefreshTokens: true,
+            scopesSupported: ["openid", "webid", "offline_access"],
+            refreshRequiresDPoPNonce: true,
+        })
+        vi.stubGlobal("fetch", as.fetch)
+        const {provider, getCode} = makeProvider()
+
+        await provider.upgrade(new Request("https://pod.test/a"))
+
+        vi.useFakeTimers()
+        vi.setSystemTime(Date.now() + 3601 * 1000)
+
+        const second = await provider.upgrade(new Request("https://pod.test/b"))
+
+        expect(getCode).toHaveBeenCalledTimes(1) // refreshed silently despite the nonce challenge
+        expect(second.headers.get("Authorization")).toMatch(/^DPoP at-\d+$/)
+
+        const refreshRequests = as.tokenRequests.filter(r => r.get("grant_type") === "refresh_token")
+        expect(refreshRequests).toHaveLength(2) // challenged once, then accepted with the nonce
+    })
+
     it("falls back to a new authorization-code flow when the refresh grant fails", async () => {
         const {provider, getCode} = makeProvider()
 

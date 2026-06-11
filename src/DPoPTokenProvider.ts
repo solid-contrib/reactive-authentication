@@ -101,8 +101,10 @@ export class DPoPTokenProvider implements TokenProvider {
 
         try {
             return await this.#refresh(expired, expired.refreshToken)
-        } catch (e) {
-            console.debug("Refresh token grant failed, falling back to a new authorization", e)
+        } catch {
+            // Deliberately not logging the error: oauth4webapi errors can carry the
+            // token-endpoint request/response (tokens included).
+            console.debug("Refresh token grant failed, falling back to a new authorization")
             return this.#authenticate(issuer)
         }
     }

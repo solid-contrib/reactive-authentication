@@ -16,6 +16,8 @@ export interface FakeAuthorizationServerOptions {
     issueRefreshTokens?: boolean
     /** Whether the refresh-token grant rotates the refresh token. Default true. */
     rotateRefreshTokens?: boolean
+    /** Whether the refresh-token grant demands a server-provided DPoP nonce (RFC 9449 §8), challenging proofs without one via `use_dpop_nonce`. Default false. */
+    refreshRequiresDPoPNonce?: boolean
     /** `scopes_supported` advertised by discovery. Default ["openid", "webid"]. */
     scopesSupported?: string[]
     /** `grant_types_supported` advertised by discovery. Default ["authorization_code"]. */
@@ -59,6 +61,23 @@ function base64url(data: Uint8Array | string): string {
 
 function json(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {status, headers: {"content-type": "application/json"}})
+}
+
+/** The server-provided nonce demanded when `refreshRequiresDPoPNonce` is on. */
+const dpopNonce = "fake-as-dpop-nonce"
+
+/** The `nonce` claim of the request's DPoP proof, if any (signature deliberately not verified — this is a test double). */
+function dpopProofNonce(request: Request): string | undefined {
+    const payload = request.headers.get("DPoP")?.split(".")[1]
+    if (payload === undefined) {
+        return undefined
+    }
+
+    try {
+        return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))).nonce
+    } catch {
+        return undefined
+    }
 }
 
 export async function createFakeAuthorizationServer(options: FakeAuthorizationServerOptions = {}): Promise<FakeAuthorizationServer> {
@@ -151,6 +170,15 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
             }
 
             if (params.get("grant_type") === "refresh_token" && issueRefreshTokens) {
+                // Nonce challenge first (RFC 9449 §8): the presented refresh token must
+                // survive the challenge so the client's retry can redeem it.
+                if (options.refreshRequiresDPoPNonce && dpopProofNonce(request) !== dpopNonce) {
+                    return new Response(JSON.stringify({error: "use_dpop_nonce", error_description: "Authorization server requires nonce in DPoP proof"}), {
+                        status: 400,
+                        headers: {"content-type": "application/json", "DPoP-Nonce": dpopNonce},
+                    })
+                }
+
                 const presented = params.get("refresh_token") ?? ""
                 if (!activeRefreshTokens.has(presented)) {
                     return json({error: "invalid_grant"}, 400)
