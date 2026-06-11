@@ -189,7 +189,18 @@ export class AuthorizationCodeFlow extends HTMLElement {
         const onMessage = (message: MessageEvent) => {
             signal.removeEventListener("abort", onAbort)
             this.#switchModal.close()
-            this.#authorizationWindow?.close()
+
+            // When the server answered a silent (`prompt=none`) attempt with a "user
+            // interaction needed" error, the caller is about to retry interactively.
+            // Keep the popup open: the retry's `open()` then NAVIGATES this named
+            // window, which browsers allow without user activation. Closing it here
+            // would make the retry create a new window — popup blockers stop that
+            // (the original click's activation is already consumed), stranding the
+            // user in the "open new window" dialog.
+            if (!needsInteraction(message.data)) {
+                this.#authorizationWindow?.close()
+            }
+
             respondWithCode(message.data)
         }
 
@@ -246,4 +257,24 @@ export class AuthorizationCodeFlow extends HTMLElement {
         this.#authorizationWindow?.close()
         this.#cancelCodeRequest?.call(undefined, new CodeRequestCancelledError(this.#authorizationUri!))
     }
+}
+
+/**
+ * Whether the authorization response is one of the OIDC "the user must interact"
+ * errors — exactly the errors token providers retry interactively right away.
+ * Anything else (a code, or a terminal error such as `access_denied`) ends the flow.
+ */
+function needsInteraction(authorizationResponse: unknown): boolean {
+    if (typeof authorizationResponse !== "string") {
+        return false
+    }
+
+    let error
+    try {
+        error = new URL(authorizationResponse).searchParams.get("error")
+    } catch {
+        return false
+    }
+
+    return error === "login_required" || error === "interaction_required" || error === "consent_required"
 }
