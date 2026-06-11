@@ -40,7 +40,6 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
         const clientRegistration: oauth.Client = {client_id: this.clientId, client_secret: this.clientSecret}
-        console.log(clientRegistration)
 
         const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false}) // TODO: Align with dpop_signing_alg_values_supported and fallback
         const dpop = oauth.DPoP({}, dpopKey)
