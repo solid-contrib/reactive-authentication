@@ -1,4 +1,8 @@
 {
+    "entryPoints": [
+        "./src/mod.ts",
+        "./src/registerElements.ts"
+    ],
     "out": "./_site",
     "highlightLanguages": [
         "ts",
