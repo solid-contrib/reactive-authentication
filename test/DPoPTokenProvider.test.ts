@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { DPoPTokenProvider } from "../src/DPoPTokenProvider.js"
+import { ReactiveFetchManager } from "../src/ReactiveFetchManager.js"
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from "./fakeAuthorizationServer.js"
 
 const callbackUri = "https://app.test/callback.html"
@@ -196,5 +197,90 @@ describe("DPoPTokenProvider refresh tokens", () => {
 
         expect(getCode).toHaveBeenCalledTimes(2) // re-authorized
         expect(second.headers.get("Authorization")).toMatch(/^DPoP at-\d+$/)
+    })
+})
+
+describe("renewal after a rejected upgrade (401-once retry)", () => {
+    /** Tokens the fake resource server no longer accepts. */
+    let revokedTokens: Set<string>
+    /** Bearer parts of the Authorization headers the resource server saw, oldest first. */
+    let presentedTokens: string[]
+
+    /** Routes pod.test to a fake resource server (401 unless a non-revoked token is presented), everything else to the fake AS. */
+    function combinedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+        const request = new Request(input, init)
+        if (new URL(request.url).origin !== "https://pod.test") {
+            return as.fetch(input, init)
+        }
+
+        const token = request.headers.get("Authorization")?.replace("DPoP ", "")
+        if (token === undefined) {
+            return Promise.resolve(new Response(null, {status: 401}))
+        }
+
+        presentedTokens.push(token)
+        return Promise.resolve(revokedTokens.has(token) ? new Response(null, {status: 401}) : new Response("ok"))
+    }
+
+    beforeEach(async () => {
+        as = await createFakeAuthorizationServer({
+            issueRefreshTokens: true,
+            scopesSupported: ["openid", "webid", "offline_access"],
+        })
+        revokedTokens = new Set()
+        presentedTokens = []
+        vi.stubGlobal("fetch", combinedFetch)
+    })
+
+    it("renews the session and retries once when the upgraded request is still rejected", async () => {
+        const {provider, getCode} = makeProvider()
+        const manager = new ReactiveFetchManager([provider])
+
+        const first = await manager.fetch("https://pod.test/private")
+        expect(first.status).toBe(200)
+
+        // Revoke the established token server-side (no expiry has passed).
+        revokedTokens.add(presentedTokens.at(-1)!)
+
+        const second = await manager.fetch("https://pod.test/private")
+
+        expect(second.status).toBe(200)
+        expect(getCode).toHaveBeenCalledTimes(1) // renewed via the refresh grant, no new popup
+        expect(as.tokenRequests.at(-1)?.get("grant_type")).toBe("refresh_token")
+    })
+
+    it("gives up after one renewal: a still-rejected retry surfaces the 401 unchanged", async () => {
+        const {provider} = makeProvider()
+        const manager = new ReactiveFetchManager([provider])
+
+        await manager.fetch("https://pod.test/private")
+
+        // Reject everything from now on, whatever token is presented.
+        const reject = {has: () => true} as unknown as Set<string>
+        revokedTokens = reject
+
+        const tokenPresentationsBefore = presentedTokens.length
+        const response = await manager.fetch("https://pod.test/private")
+
+        expect(response.status).toBe(401)
+        // Bounded: the cached token once, the renewed token once — then give up.
+        expect(presentedTokens.length - tokenPresentationsBefore).toBe(2)
+    })
+
+    it("ignores invalidation for a token that is no longer the cached one", async () => {
+        const {provider} = makeProvider()
+
+        const first = await provider.upgrade(new Request("https://pod.test/a"))
+        await provider.invalidate(first)
+        const second = await provider.upgrade(new Request("https://pod.test/b"))
+        expect(second.headers.get("Authorization")).not.toBe(first.headers.get("Authorization"))
+
+        // Replaying the stale rejection must not invalidate the renewed session.
+        const tokenRequestsBefore = as.tokenRequests.length
+        await provider.invalidate(first)
+        const third = await provider.upgrade(new Request("https://pod.test/c"))
+
+        expect(third.headers.get("Authorization")).toBe(second.headers.get("Authorization"))
+        expect(as.tokenRequests.length).toBe(tokenRequestsBefore)
     })
 })
