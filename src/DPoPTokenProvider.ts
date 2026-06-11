@@ -4,10 +4,43 @@ import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { GetIssuerCallback } from "./GetIssuerCallback.js"
 
+/** The client metadata shape produced by dynamic client registration. */
+type ClientRegistration = Awaited<ReturnType<typeof oauth.processDynamicClientRegistrationResponse>>
+
+/** Authentication state for one issuer, reused across upgrades. */
+interface IssuerSession {
+    authorizationServer: oauth.AuthorizationServer
+    clientRegistration: ClientRegistration
+    dpopKey: CryptoKeyPair
+    accessToken: string
+    /** Epoch milliseconds after which the access token is considered expired, or undefined when the server gave no expiry. */
+    expiresAt: number | undefined
+}
+
+/**
+ * Refresh this much before the server-reported expiry, so clock skew between us
+ * and the resource server does not produce a window of rejected requests.
+ */
+const expirySkewMs = 30_000
+
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
     readonly #getIssuer: GetIssuerCallback
+
+    /**
+     * Single-flight session cache per issuer: concurrent upgrades share one
+     * authorization-code flow (one popup), and later upgrades reuse the
+     * established token until it expires instead of re-running the flow.
+     */
+    readonly #sessions = new Map<string, Promise<IssuerSession>>()
+
+    /**
+     * The shared authentication work is provider-owned, so it is deliberately
+     * not tied to any single request's AbortSignal — aborting one request must
+     * not cancel the login that other concurrent upgrades are waiting on.
+     */
+    readonly #authSignal = new AbortController().signal
 
     constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback) {
         this.#getCode = getCodeCallback
@@ -21,11 +54,62 @@ export class DPoPTokenProvider implements TokenProvider {
 
     async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
+        const session = await this.#session(issuer)
 
-        const discoveryResponse = await oauth.discoveryRequest(issuer, {signal: request.signal})
+        const headers = new Headers(request.headers)
+
+        headers.set("DPoP", await DPoP.generateProof(session.dpopKey, request.url, request.method, undefined, session.accessToken))
+        headers.set("Authorization", ["DPoP", session.accessToken].join(" "))
+
+        return new Request(request, {headers})
+    }
+
+    /**
+     * Returns the cached session for the issuer, renewing it when expired and
+     * establishing it when absent. A failed flow is not cached, so the next
+     * upgrade retries.
+     */
+    async #session(issuer: URL): Promise<IssuerSession> {
+        const pending = this.#sessions.get(issuer.href)
+        if (pending === undefined) {
+            return this.#begin(issuer, this.#authenticate(issuer))
+        }
+
+        const session = await pending
+        if (!hasExpired(session)) {
+            return session
+        }
+
+        // Renew, unless a concurrent caller already replaced the expired session.
+        if (this.#sessions.get(issuer.href) === pending) {
+            this.#sessions.delete(issuer.href)
+            return this.#begin(issuer, this.#authenticate(issuer))
+        }
+
+        return this.#session(issuer)
+    }
+
+    /** Caches the in-flight work; evicts it on failure so the flow can be retried. */
+    async #begin(issuer: URL, work: Promise<IssuerSession>): Promise<IssuerSession> {
+        this.#sessions.set(issuer.href, work)
+        try {
+            return await work
+        } catch (e) {
+            if (this.#sessions.get(issuer.href) === work) {
+                this.#sessions.delete(issuer.href)
+            }
+            throw e
+        }
+    }
+
+    /** The full authorization-code flow: discovery → registration → PKCE/DPoP code grant. */
+    async #authenticate(issuer: URL): Promise<IssuerSession> {
+        const signal = this.#authSignal
+
+        const discoveryResponse = await oauth.discoveryRequest(issuer, {signal})
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal: request.signal})
+        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal})
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
@@ -56,7 +140,7 @@ export class DPoPTokenProvider implements TokenProvider {
             }
         }
 
-        const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
+        const authorizationCodeResponse = await this.#getCode(authorizationUrl, signal)
 
         let authorizationCodeParams
         try {
@@ -72,23 +156,24 @@ export class DPoPTokenProvider implements TokenProvider {
                 console.debug("Authorization server requires user interaction, retrying without prompt")
 
                 authorizationUrl.searchParams.delete("prompt")
-                const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
+                const authorizationCodeResponse = await this.#getCode(authorizationUrl, signal)
                 authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
             } else {
                 throw e
             }
         }
 
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal: request.signal})
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal})
 
         const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
 
-        const headers = new Headers(request.headers)
-
-        headers.set("DPoP", await DPoP.generateProof(dpopKey, request.url, request.method, undefined, tokenResult.access_token))
-        headers.set("Authorization", ["DPoP", tokenResult.access_token].join(" "))
-
-        return new Request(request, {headers})
+        return {
+            authorizationServer,
+            clientRegistration,
+            dpopKey,
+            accessToken: tokenResult.access_token,
+            expiresAt: expiresAt(tokenResult),
+        }
     }
 
     private getClientAuth(issuer: string, client: oauth.OmitSymbolProperties<oauth.Client>): oauth.ClientAuth {
@@ -110,6 +195,14 @@ export class DPoPTokenProvider implements TokenProvider {
 
         return nonce
     }
+}
+
+function expiresAt(token: oauth.TokenEndpointResponse): number | undefined {
+    return token.expires_in === undefined ? undefined : Date.now() + token.expires_in * 1000 - expirySkewMs
+}
+
+function hasExpired(session: IssuerSession): boolean {
+    return session.expiresAt !== undefined && Date.now() >= session.expiresAt
 }
 
 function isEssMissingIssInteractionNeeded(e: unknown) {
