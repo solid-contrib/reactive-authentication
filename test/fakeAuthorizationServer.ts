@@ -64,6 +64,7 @@ function json(body: unknown, status = 200): Response {
 export async function createFakeAuthorizationServer(options: FakeAuthorizationServerOptions = {}): Promise<FakeAuthorizationServer> {
     const issuer = "https://as.test"
     const expiresIn = options.expiresIn ?? 3600
+    const issueRefreshTokens = options.issueRefreshTokens ?? false
     const rotate = options.rotateRefreshTokens ?? true
 
     const keys = await crypto.subtle.generateKey({name: "ECDSA", namedCurve: "P-256"}, true, ["sign", "verify"]) as CryptoKeyPair
@@ -116,7 +117,7 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
                 code_challenge_methods_supported: ["S256"],
                 id_token_signing_alg_values_supported: ["ES256"],
                 scopes_supported: options.scopesSupported ?? ["openid", "webid"],
-                grant_types_supported: options.grantTypesSupported ?? ["authorization_code"],
+                grant_types_supported: options.grantTypesSupported ?? (issueRefreshTokens ? ["authorization_code", "refresh_token"] : ["authorization_code"]),
             })
         }
 
@@ -146,18 +147,21 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
                     return json({error: "invalid_grant"}, 400)
                 }
                 codes.delete(params.get("code")!)
-                return json(tokenBody(options.issueRefreshTokens ?? false, await signIdToken(params.get("client_id") ?? code.clientId ?? "", code.nonce)))
+                return json(tokenBody(issueRefreshTokens, await signIdToken(params.get("client_id") ?? code.clientId ?? "", code.nonce)))
             }
 
-            if (params.get("grant_type") === "refresh_token") {
+            if (params.get("grant_type") === "refresh_token" && issueRefreshTokens) {
                 const presented = params.get("refresh_token") ?? ""
                 if (!activeRefreshTokens.has(presented)) {
                     return json({error: "invalid_grant"}, 400)
                 }
                 if (rotate) {
+                    // Rotation (RFC 9700 §4.14.2): retire the presented token and issue a replacement.
                     activeRefreshTokens.delete(presented)
+                    return json(tokenBody(true))
                 }
-                return json(tokenBody(true))
+                // No rotation: the presented token stays active and the response carries no new one (RFC 6749 §6).
+                return json(tokenBody(false))
             }
 
             return json({error: "unsupported_grant_type"}, 400)
