@@ -159,6 +159,30 @@ describe("DPoPTokenProvider refresh tokens", () => {
         expect(refreshRequests[1]?.get("refresh_token")).not.toBe(refreshRequests[0]?.get("refresh_token"))
     })
 
+    it("sends prompt=consent on the interactive attempt so strict servers honour offline_access (OIDC Core §11)", async () => {
+        as = await createFakeAuthorizationServer({
+            issueRefreshTokens: true,
+            scopesSupported: ["openid", "webid", "offline_access"],
+            enforceOfflineAccessConsent: true,
+        })
+        vi.stubGlobal("fetch", as.fetch)
+        const {provider, getCode} = makeProvider()
+
+        const first = await provider.upgrade(new Request("https://pod.test/a"))
+
+        expect(first.headers.get("Authorization")).toMatch(/^DPoP at-\d+$/)
+        expect(getCode).toHaveBeenCalledTimes(2) // silent attempt → login_required → interactive retry
+        expect(as.authorizationRequests.at(-1)?.prompt).toBe("consent")
+
+        // The strict server issued a refresh token, so expiry renews silently.
+        vi.useFakeTimers()
+        vi.setSystemTime(Date.now() + 3601 * 1000)
+        await provider.upgrade(new Request("https://pod.test/b"))
+
+        expect(getCode).toHaveBeenCalledTimes(2) // no further interaction
+        expect(as.tokenRequests.at(-1)?.get("grant_type")).toBe("refresh_token")
+    })
+
     it("retries the refresh grant once when the server demands a DPoP nonce", async () => {
         as = await createFakeAuthorizationServer({
             issueRefreshTokens: true,

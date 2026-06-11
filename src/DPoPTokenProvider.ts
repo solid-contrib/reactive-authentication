@@ -235,9 +235,17 @@ export class DPoPTokenProvider implements TokenProvider {
                 // Workaround ESS not returning `iss` in error response
                 isEssMissingIssInteractionNeeded(e)
             ) {
-                console.debug("Authorization server requires user interaction, retrying without prompt")
+                console.debug("Authorization server requires user interaction, retrying interactively")
 
-                authorizationUrl.searchParams.delete("prompt")
+                // The interactive attempt must carry `prompt=consent` for the server
+                // to honour `offline_access`: OIDC Core §11 says the AS MUST ignore
+                // the scope otherwise, and oidc-provider (Community Solid Server and
+                // brokers built on it) enforces that strictly.
+                if (useOfflineAccess) {
+                    authorizationUrl.searchParams.set("prompt", "consent")
+                } else {
+                    authorizationUrl.searchParams.delete("prompt")
+                }
                 const authorizationCodeResponse = await this.#getCode(authorizationUrl, signal)
                 authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
             } else {
