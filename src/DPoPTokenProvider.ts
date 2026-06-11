@@ -12,7 +12,11 @@ interface IssuerSession {
     authorizationServer: oauth.AuthorizationServer
     clientRegistration: ClientRegistration
     dpopKey: CryptoKeyPair
+    /** The oauth4webapi DPoP handle for token-endpoint requests. Reused so refreshed tokens stay bound to the same key (RFC 9449 §4.3) and server-provided nonces are remembered. */
+    dpopHandle: oauth.DPoPHandle
     accessToken: string
+    /** The refresh token (RFC 6749 §6), when the server issued one. Updated in place when the server rotates it. */
+    refreshToken: string | undefined
     /** Epoch milliseconds after which the access token is considered expired, or undefined when the server gave no expiry. */
     expiresAt: number | undefined
 }
@@ -83,10 +87,53 @@ export class DPoPTokenProvider implements TokenProvider {
         // Renew, unless a concurrent caller already replaced the expired session.
         if (this.#sessions.get(issuer.href) === pending) {
             this.#sessions.delete(issuer.href)
-            return this.#begin(issuer, this.#authenticate(issuer))
+            return this.#begin(issuer, this.#renew(issuer, session))
         }
 
         return this.#session(issuer)
+    }
+
+    /** Prefers a transparent refresh-token grant; falls back to a new authorization-code flow when there is no refresh token or the grant fails (expired, revoked, rotation reuse, …). */
+    async #renew(issuer: URL, expired: IssuerSession): Promise<IssuerSession> {
+        if (expired.refreshToken === undefined) {
+            return this.#authenticate(issuer)
+        }
+
+        try {
+            return await this.#refresh(expired, expired.refreshToken)
+        } catch {
+            // Deliberately not logging the error: oauth4webapi errors can carry the
+            // token-endpoint request/response (tokens included).
+            console.debug("Refresh token grant failed, falling back to a new authorization")
+            return this.#authenticate(issuer)
+        }
+    }
+
+    /** The refresh-token grant (RFC 6749 §6), DPoP-bound to the session's key, adopting the rotated refresh token when the server issues one (RFC 9700 §4.14.2). */
+    async #refresh(session: IssuerSession, refreshToken: string): Promise<IssuerSession> {
+        const {authorizationServer, clientRegistration, dpopHandle} = session
+        const clientAuth = this.getClientAuth(authorizationServer.issuer, clientRegistration)
+
+        const grant = () => oauth.refreshTokenGrantRequest(authorizationServer, clientRegistration, clientAuth, refreshToken, {DPoP: dpopHandle, signal: this.#authSignal})
+
+        let tokenResult
+        try {
+            tokenResult = await oauth.processRefreshTokenResponse(authorizationServer, clientRegistration, await grant())
+        } catch (e) {
+            if (!oauth.isDPoPNonceError(e)) {
+                throw e
+            }
+
+            // The handle has captured the server's DPoP nonce from the error response; retry once.
+            tokenResult = await oauth.processRefreshTokenResponse(authorizationServer, clientRegistration, await grant())
+        }
+
+        return {
+            ...session,
+            accessToken: tokenResult.access_token,
+            refreshToken: tokenResult.refresh_token ?? refreshToken,
+            expiresAt: expiresAt(tokenResult),
+        }
     }
 
     /** Caches the in-flight work; evicts it on failure so the flow can be retried. */
@@ -109,7 +156,18 @@ export class DPoPTokenProvider implements TokenProvider {
         const discoveryResponse = await oauth.discoveryRequest(issuer, {signal})
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal})
+        // Opt in to refresh tokens where the server supports them: register for the
+        // refresh_token grant and ask for the offline_access scope (OIDC Core §11).
+        // Servers that support neither see the exact requests they saw before.
+        const useRefreshTokens = authorizationServer.grant_types_supported?.includes("refresh_token") ?? false
+        const useOfflineAccess = authorizationServer.scopes_supported?.includes("offline_access") ?? false
+
+        const registrationMetadata: Parameters<typeof oauth.dynamicClientRegistrationRequest>[1] = {
+            redirect_uris: [this.#callbackUri],
+            ...useRefreshTokens ? {grant_types: ["authorization_code", "refresh_token"]} : {},
+        }
+
+        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, registrationMetadata, {signal})
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
@@ -125,7 +183,7 @@ export class DPoPTokenProvider implements TokenProvider {
         authorizationUrl.searchParams.set("client_id", clientRegistration.client_id)
         authorizationUrl.searchParams.set("redirect_uri", registeredRedirectUri!)
         authorizationUrl.searchParams.set("response_type", registeredResponseType!)
-        authorizationUrl.searchParams.set("scope", "openid webid")
+        authorizationUrl.searchParams.set("scope", useOfflineAccess ? "openid webid offline_access" : "openid webid")
         authorizationUrl.searchParams.set("prompt", "none")
         authorizationUrl.searchParams.set("state", state)
         authorizationUrl.searchParams.set("nonce", nonce)
@@ -153,9 +211,17 @@ export class DPoPTokenProvider implements TokenProvider {
                 // Workaround ESS not returning `iss` in error response
                 isEssMissingIssInteractionNeeded(e)
             ) {
-                console.debug("Authorization server requires user interaction, retrying without prompt")
+                console.debug("Authorization server requires user interaction, retrying interactively")
 
-                authorizationUrl.searchParams.delete("prompt")
+                // The interactive attempt must carry `prompt=consent` for the server
+                // to honour `offline_access`: OIDC Core §11 says the AS MUST ignore
+                // the scope otherwise, and oidc-provider (Community Solid Server and
+                // brokers built on it) enforces that strictly.
+                if (useOfflineAccess) {
+                    authorizationUrl.searchParams.set("prompt", "consent")
+                } else {
+                    authorizationUrl.searchParams.delete("prompt")
+                }
                 const authorizationCodeResponse = await this.#getCode(authorizationUrl, signal)
                 authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
             } else {
@@ -171,7 +237,9 @@ export class DPoPTokenProvider implements TokenProvider {
             authorizationServer,
             clientRegistration,
             dpopKey,
+            dpopHandle: dpop,
             accessToken: tokenResult.access_token,
+            refreshToken: tokenResult.refresh_token,
             expiresAt: expiresAt(tokenResult),
         }
     }

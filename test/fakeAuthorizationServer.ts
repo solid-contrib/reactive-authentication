@@ -16,6 +16,16 @@ export interface FakeAuthorizationServerOptions {
     issueRefreshTokens?: boolean
     /** Whether the refresh-token grant rotates the refresh token. Default true. */
     rotateRefreshTokens?: boolean
+    /** Whether the refresh-token grant demands a server-provided DPoP nonce (RFC 9449 §8), challenging proofs without one via `use_dpop_nonce`. Default false. */
+    refreshRequiresDPoPNonce?: boolean
+    /**
+     * Emulate a server that enforces OIDC Core §11 the way oidc-provider does
+     * (Community Solid Server and brokers built on it): `prompt=none` is
+     * answered with `error=login_required` (no session), and `offline_access`
+     * is silently dropped from any request whose prompt does not include
+     * `consent`. Default false (lenient: silent authorization succeeds).
+     */
+    enforceOfflineAccessConsent?: boolean
     /** `scopes_supported` advertised by discovery. Default ["openid", "webid"]. */
     scopesSupported?: string[]
     /** `grant_types_supported` advertised by discovery. Default ["authorization_code"]. */
@@ -61,6 +71,23 @@ function json(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {status, headers: {"content-type": "application/json"}})
 }
 
+/** The server-provided nonce demanded when `refreshRequiresDPoPNonce` is on. */
+const dpopNonce = "fake-as-dpop-nonce"
+
+/** The `nonce` claim of the request's DPoP proof, if any (signature deliberately not verified — this is a test double). */
+function dpopProofNonce(request: Request): string | undefined {
+    const payload = request.headers.get("DPoP")?.split(".")[1]
+    if (payload === undefined) {
+        return undefined
+    }
+
+    try {
+        return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))).nonce
+    } catch {
+        return undefined
+    }
+}
+
 export async function createFakeAuthorizationServer(options: FakeAuthorizationServerOptions = {}): Promise<FakeAuthorizationServer> {
     const issuer = "https://as.test"
     const expiresIn = options.expiresIn ?? 3600
@@ -71,8 +98,8 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
     const publicJwk = await crypto.subtle.exportKey("jwk", keys.publicKey)
 
     let counter = 0
-    /** nonce + client of each outstanding authorization code */
-    const codes = new Map<string, {nonce: string | null, clientId: string | null}>()
+    /** nonce + client + effective scope of each outstanding authorization code */
+    const codes = new Map<string, {nonce: string | null, clientId: string | null, scope: string}>()
     const activeRefreshTokens = new Set<string>()
     const authorizationRequests: AuthorizationRequestRecord[] = []
     const registrations: Record<string, unknown>[] = []
@@ -88,12 +115,12 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
         return `${header}.${payload}.${base64url(new Uint8Array(signature))}`
     }
 
-    function tokenBody(refreshable: boolean, idToken?: string) {
+    function tokenBody(refreshable: boolean, scope: string, idToken?: string) {
         const body: Record<string, unknown> = {
             access_token: `at-${++counter}`,
             token_type: "DPoP",
             expires_in: expiresIn,
-            scope: "openid webid",
+            scope,
         }
         if (idToken !== undefined) body.id_token = idToken
         if (refreshable) {
@@ -147,10 +174,20 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
                     return json({error: "invalid_grant"}, 400)
                 }
                 codes.delete(params.get("code")!)
-                return json(tokenBody(issueRefreshTokens, await signIdToken(params.get("client_id") ?? code.clientId ?? "", code.nonce)))
+                const refreshable = issueRefreshTokens && code.scope.split(" ").includes("offline_access")
+                return json(tokenBody(refreshable, code.scope, await signIdToken(params.get("client_id") ?? code.clientId ?? "", code.nonce)))
             }
 
             if (params.get("grant_type") === "refresh_token" && issueRefreshTokens) {
+                // Nonce challenge first (RFC 9449 §8): the presented refresh token must
+                // survive the challenge so the client's retry can redeem it.
+                if (options.refreshRequiresDPoPNonce && dpopProofNonce(request) !== dpopNonce) {
+                    return new Response(JSON.stringify({error: "use_dpop_nonce", error_description: "Authorization server requires nonce in DPoP proof"}), {
+                        status: 400,
+                        headers: {"content-type": "application/json", "DPoP-Nonce": dpopNonce},
+                    })
+                }
+
                 const presented = params.get("refresh_token") ?? ""
                 if (!activeRefreshTokens.has(presented)) {
                     return json({error: "invalid_grant"}, 400)
@@ -158,10 +195,10 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
                 if (rotate) {
                     // Rotation (RFC 9700 §4.14.2): retire the presented token and issue a replacement.
                     activeRefreshTokens.delete(presented)
-                    return json(tokenBody(true))
+                    return json(tokenBody(true, "openid webid offline_access"))
                 }
                 // No rotation: the presented token stays active and the response carries no new one (RFC 6749 §6).
-                return json(tokenBody(false))
+                return json(tokenBody(false, "openid webid offline_access"))
             }
 
             return json({error: "unsupported_grant_type"}, 400)
@@ -174,17 +211,33 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
         issuer,
         fetch: (input, init) => handle(new Request(input, init)),
         async authorize(authorizationUrl: URL): Promise<string> {
+            const prompt = authorizationUrl.searchParams.get("prompt")
+            const scope = authorizationUrl.searchParams.get("scope") ?? "openid"
             authorizationRequests.push({
-                scope: authorizationUrl.searchParams.get("scope"),
-                prompt: authorizationUrl.searchParams.get("prompt"),
+                scope,
+                prompt,
                 clientId: authorizationUrl.searchParams.get("client_id"),
             })
+            const redirect = new URL(authorizationUrl.searchParams.get("redirect_uri")!)
+
+            if (options.enforceOfflineAccessConsent && prompt === "none") {
+                // No session: a silent request cannot succeed.
+                redirect.searchParams.set("error", "login_required")
+                redirect.searchParams.set("state", authorizationUrl.searchParams.get("state")!)
+                return redirect.href
+            }
+
+            // OIDC Core §11: offline_access MUST be ignored unless the prompt includes consent.
+            const effectiveScope = options.enforceOfflineAccessConsent && !(prompt?.split(" ").includes("consent") ?? false)
+                ? scope.split(" ").filter(s => s !== "offline_access").join(" ")
+                : scope
+
             const code = `code-${++counter}`
             codes.set(code, {
                 nonce: authorizationUrl.searchParams.get("nonce"),
                 clientId: authorizationUrl.searchParams.get("client_id"),
+                scope: effectiveScope,
             })
-            const redirect = new URL(authorizationUrl.searchParams.get("redirect_uri")!)
             redirect.searchParams.set("code", code)
             redirect.searchParams.set("state", authorizationUrl.searchParams.get("state")!)
             return redirect.href
