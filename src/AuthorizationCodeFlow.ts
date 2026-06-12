@@ -187,6 +187,11 @@ export class AuthorizationCodeFlow extends HTMLElement {
         this.#cancelCodeRequest = cancelCodeRequest
 
         const onMessage = (message: MessageEvent) => {
+            if (message.source !== this.#authorizationWindow) {
+                return
+            }
+
+            this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
             signal.removeEventListener("abort", onAbort)
             this.#switchModal.close()
             this.#authorizationWindow?.close()
@@ -202,7 +207,7 @@ export class AuthorizationCodeFlow extends HTMLElement {
         }
 
         signal.addEventListener("abort", onAbort, onlyOnce)
-        this.ownerDocument.defaultView?.addEventListener("message", onMessage, onlyOnce)
+        this.ownerDocument.defaultView?.addEventListener("message", onMessage)
 
         this.#openAuthorizationWindow()
 
