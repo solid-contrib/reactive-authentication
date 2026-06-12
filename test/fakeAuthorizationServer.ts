@@ -10,6 +10,10 @@
  */
 
 export interface FakeAuthorizationServerOptions {
+    /** The issuer identifier (and base URL) of the server. Default "https://as.test". */
+    issuer?: string
+    /** `token_endpoint_auth_methods_supported` advertised by discovery. Omitted by default. */
+    tokenEndpointAuthMethodsSupported?: string[]
     /** `expires_in` reported on every token response. Default 3600. */
     expiresIn?: number
     /** Whether token responses include a refresh token. Default false. */
@@ -89,7 +93,7 @@ function dpopProofNonce(request: Request): string | undefined {
 }
 
 export async function createFakeAuthorizationServer(options: FakeAuthorizationServerOptions = {}): Promise<FakeAuthorizationServer> {
-    const issuer = "https://as.test"
+    const issuer = options.issuer ?? "https://as.test"
     const expiresIn = options.expiresIn ?? 3600
     const issueRefreshTokens = options.issueRefreshTokens ?? false
     const rotate = options.rotateRefreshTokens ?? true
@@ -145,6 +149,7 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
                 id_token_signing_alg_values_supported: ["ES256"],
                 scopes_supported: options.scopesSupported ?? ["openid", "webid"],
                 grant_types_supported: options.grantTypesSupported ?? (issueRefreshTokens ? ["authorization_code", "refresh_token"] : ["authorization_code"]),
+                ...options.tokenEndpointAuthMethodsSupported === undefined ? {} : {token_endpoint_auth_methods_supported: options.tokenEndpointAuthMethodsSupported},
             })
         }
 
@@ -199,6 +204,10 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
                 }
                 // No rotation: the presented token stays active and the response carries no new one (RFC 6749 §6).
                 return json(tokenBody(false, "openid webid offline_access"))
+            }
+
+            if (params.get("grant_type") === "client_credentials") {
+                return json(tokenBody(false, params.get("scope") ?? ""))
             }
 
             return json({error: "unsupported_grant_type"}, 400)

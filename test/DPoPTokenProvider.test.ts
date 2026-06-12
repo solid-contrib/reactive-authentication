@@ -229,6 +229,20 @@ describe("renewal after a rejected upgrade (401-once retry)", () => {
     let revokedTokens: Set<string>
     /** Bearer parts of the Authorization headers the resource server saw, oldest first. */
     let presentedTokens: string[]
+    /** How many rejected-token 401 bodies have been cancelled by the consumer. */
+    let rejectionBodyCancellations: number
+
+    /** A 401 body whose cancellation the tests can observe. */
+    function rejectionBody(): ReadableStream<Uint8Array> {
+        return new ReadableStream({
+            start(controller) {
+                controller.enqueue(new TextEncoder().encode("token rejected"))
+            },
+            cancel() {
+                rejectionBodyCancellations++
+            },
+        })
+    }
 
     /** Routes pod.test to a fake resource server (401 unless a non-revoked token is presented), everything else to the fake AS. */
     function combinedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -244,7 +258,7 @@ describe("renewal after a rejected upgrade (401-once retry)", () => {
         const token = authorization.slice("DPoP ".length)
 
         presentedTokens.push(token)
-        return Promise.resolve(revokedTokens.has(token) ? new Response(null, {status: 401}) : new Response("ok"))
+        return Promise.resolve(revokedTokens.has(token) ? new Response(rejectionBody(), {status: 401}) : new Response("ok"))
     }
 
     beforeEach(async () => {
@@ -254,6 +268,7 @@ describe("renewal after a rejected upgrade (401-once retry)", () => {
         })
         revokedTokens = new Set()
         presentedTokens = []
+        rejectionBodyCancellations = 0
         vi.stubGlobal("fetch", combinedFetch)
     })
 
@@ -290,6 +305,22 @@ describe("renewal after a rejected upgrade (401-once retry)", () => {
         expect(response.status).toBe(401)
         // Bounded: the cached token once, the renewed token once — then give up.
         expect(presentedTokens.length - tokenPresentationsBefore).toBe(2)
+    })
+
+    // regression: PR #14 (feat/renew-on-rejected-token) — 04feb23: the discarded 401's
+    // body must be cancelled before retrying, so the connection can be reused
+    // (undici keep-alive) and the response does not linger half-read.
+    it("cancels the discarded 401 body before retrying with renewed credentials", async () => {
+        const {provider} = makeProvider()
+        const manager = new ReactiveFetchManager([provider])
+
+        await manager.fetch("https://pod.test/private")
+        revokedTokens.add(presentedTokens.at(-1)!)
+
+        const response = await manager.fetch("https://pod.test/private")
+
+        expect(response.status).toBe(200) // renewed and retried…
+        expect(rejectionBodyCancellations).toBe(1) // …after cancelling the rejected upgrade's 401 body
     })
 
     it("ignores invalidation for a token that is no longer the cached one", async () => {

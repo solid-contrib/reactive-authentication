@@ -35,6 +35,7 @@
     "oauth4webapi": "^3"
   },
   "devDependencies": {
+    "happy-dom": "^20.10.2",
     "typedoc": "^0.28.18",
     "typedoc-plugin-mdn-links": "^5.1.1",
     "typescript": "^6",
