@@ -237,10 +237,11 @@ describe("renewal after a rejected upgrade (401-once retry)", () => {
             return as.fetch(input, init)
         }
 
-        const token = request.headers.get("Authorization")?.replace("DPoP ", "")
-        if (token === undefined) {
+        const authorization = request.headers.get("Authorization")
+        if (authorization === null || !authorization.startsWith("DPoP ")) {
             return Promise.resolve(new Response(null, {status: 401}))
         }
+        const token = authorization.slice("DPoP ".length)
 
         presentedTokens.push(token)
         return Promise.resolve(revokedTokens.has(token) ? new Response(null, {status: 401}) : new Response("ok"))

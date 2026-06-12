@@ -40,7 +40,9 @@ export class ReactiveFetchManager extends EventTarget {
 
         // The credentials we attached were rejected. Mark them stale and retry
         // once with renewed ones; if those are rejected too, give up and let the
-        // caller see the 401 (bounded — never a loop).
+        // caller see the 401 (bounded — never a loop). Cancel the discarded
+        // response's body so the connection can be reused (undici keep-alive).
+        await upgradedResponse.body?.cancel().catch(() => undefined)
         await provider.invalidate(upgraded)
         return this.#globalFetch.call(undefined, await provider.upgrade(request))
     }
