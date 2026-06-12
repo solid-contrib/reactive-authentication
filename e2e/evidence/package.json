@@ -1,0 +1,12 @@
+{
+  "name": "sra-evidence",
+  "private": true,
+  "type": "module",
+  "description": "Behavioural evidence tests for reactive-authentication PR review threads (Samu / langsamu). Not part of the published package.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}
