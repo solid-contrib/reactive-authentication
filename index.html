@@ -38,7 +38,8 @@
                 console.log(`Start fetch to ${uri}`)
 
                 try {
-                    const response = await fetch(uri, {signal: AbortSignal.timeout(5000)})
+                    // const response = await fetch(uri, {signal: AbortSignal.timeout(5000)})
+                    const response = await fetch(uri)
                     console.log(`Fetch succeeded to ${uri}`, response)
                 } catch (e) {
                     console.error(`Fetch failed to ${uri}`, e)
