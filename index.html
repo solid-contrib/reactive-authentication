@@ -15,8 +15,11 @@
             }
         </script>
         <script type="module">
-            import { DPoPTokenProvider, ReactiveFetchManager } from "./dist/mod.js"
+            import { DPoPTokenProvider, InsecureConfiguration, ReactiveFetchManager } from "./dist/mod.js"
             import "./dist/registerElements.js"
+
+            /* Demo talks to a local Community Solid Server over plain HTTP */
+            InsecureConfiguration.allow()
 
             /* Reactive fetch infrastructure */
             const ui = document.querySelector("authorization-code-flow")

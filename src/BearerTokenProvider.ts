@@ -1,9 +1,7 @@
 import * as oauth from "oauth4webapi"
 import { GetCodeCallback } from "./GetCodeCallback.js"
 import { TokenProvider } from "./TokenProvider.js"
-
-// TODO: Configure properly for insecure localhost only
-const oauthAllowInsecureRequests = true
+import { InsecureConfiguration } from "./InsecureConfiguration.js"
 
 export class BearerTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
@@ -43,12 +41,12 @@ export class BearerTokenProvider implements TokenProvider {
     async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
 
-        const discoveryResponse = await oauth.discoveryRequest(issuer, {[oauth.allowInsecureRequests]: oauthAllowInsecureRequests})
+        const discoveryResponse = await oauth.discoveryRequest(issuer, InsecureConfiguration.requestOptions)
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
         const callbackUri = await this.#getCallback(request)
 
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]}, {[oauth.allowInsecureRequests]: oauthAllowInsecureRequests})
+        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]}, InsecureConfiguration.requestOptions)
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
@@ -84,7 +82,7 @@ export class BearerTokenProvider implements TokenProvider {
             clientAuth = authenticationMethod(clientSecret)
         }
 
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, codeVerifier, {[oauth.allowInsecureRequests]: oauthAllowInsecureRequests})
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, codeVerifier, InsecureConfiguration.requestOptions)
 
         // jwt nonce missing in igrant
         // const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: nonce})
