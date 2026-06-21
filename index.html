@@ -13,7 +13,7 @@
             }
         </script>
         <script type="module">
-            import { DPoPTokenProvider, ReactiveFetchManager } from "./dist/mod.js"
+            import { DPoPTokenProvider, clientIdClientCallback, ReactiveFetchManager } from "./dist/mod.js"
             import "./dist/registerElements.js"
 
             /* Page functionality: Buttons */
@@ -63,7 +63,7 @@
             const issuerUi = document.querySelector("idp-picker")
             const callbackUri = new URL("/callback.html", location.href).toString()
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerUi.getIssuer.bind(issuerUi))
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerUi.getIssuer.bind(issuerUi), clientIdClientCallback(new URL("./id.jsonld", location.href)))
 
             new ReactiveFetchManager([dPoPTokenProvider]).registerGlobally()
         </script>
