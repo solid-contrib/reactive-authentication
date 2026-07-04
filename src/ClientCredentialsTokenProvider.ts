@@ -2,9 +2,14 @@ import * as oauth from "oauth4webapi"
 import { AuthorizationServer } from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { TokenProvider } from "./TokenProvider.js"
+import type { TokenProviderOptions } from "./TokenProviderOptions.js"
+import { customFetchOption } from "./customFetchOption.js"
 
 export class ClientCredentialsTokenProvider implements TokenProvider {
-    constructor(private clientId: string, private clientSecret: string) {
+    readonly #fetch: typeof globalThis.fetch | undefined
+
+    constructor(private clientId: string, private clientSecret: string, options?: TokenProviderOptions) {
+        this.#fetch = options?.fetch
     }
 
     async #getIssuer(request: Request): Promise<URL> {
@@ -34,9 +39,11 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
     async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
 
-        const discoveryResponse = await oauth.discoveryRequest(issuer, {
-            signal: request.signal
-        })
+        // Pin the provider's own OIDC requests to the configured fetch (when given)
+        // so they never re-enter an authenticating wrapper patched over the global.
+        const oidcRequestOptions = {signal: request.signal, ...customFetchOption(this.#fetch)}
+
+        const discoveryResponse = await oauth.discoveryRequest(issuer, oidcRequestOptions)
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
         const clientRegistration: oauth.Client = {client_id: this.clientId, client_secret: this.clientSecret}
@@ -46,7 +53,7 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
 
         const tokenResponse = await oauth.clientCredentialsGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer, clientRegistration), {scope: "webid"}, {
             DPoP: dpop,
-            signal: request.signal
+            ...oidcRequestOptions
         })
 
         const tokenResult = await oauth.processClientCredentialsResponse(authorizationServer, clientRegistration, tokenResponse)

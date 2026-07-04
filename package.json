@@ -26,7 +26,8 @@
     "url": "git+https://github.com/solid-contrib/reactive-authentication.git"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "npm run build && node --test --experimental-strip-types \"test/**/*.test.ts\""
   },
   "license": "MIT",
   "dependencies": {
