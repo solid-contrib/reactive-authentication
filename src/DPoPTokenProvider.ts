@@ -3,6 +3,7 @@ import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { GetIssuerCallback } from "./GetIssuerCallback.js"
+import { SessionForgottenError } from "./SessionForgottenError.js"
 
 /** The client metadata shape produced by dynamic client registration. */
 type ClientRegistration = Awaited<ReturnType<typeof oauth.processDynamicClientRegistrationResponse>>
@@ -40,6 +41,15 @@ export class DPoPTokenProvider implements TokenProvider {
     readonly #sessions = new Map<string, Promise<IssuerSession>>()
 
     /**
+     * Per-issuer supersession counter. {@link forget} bumps it; an in-flight
+     * {@link upgrade} that captured an earlier value re-checks it before arming
+     * (attaching credentials) and fails closed if it advanced — so a session
+     * forgotten mid-upgrade can never complete a request with its credentials,
+     * and a concurrent renewal can never resurrect it. Absent entry means 0.
+     */
+    readonly #generations = new Map<string, number>()
+
+    /**
      * The shared authentication work is provider-owned, so it is deliberately
      * not tied to any single request's AbortSignal — aborting one request must
      * not cancel the login that other concurrent upgrades are waiting on.
@@ -58,7 +68,19 @@ export class DPoPTokenProvider implements TokenProvider {
 
     async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
+
+        // Capture the issuer's generation BEFORE establishing/reusing the session
+        // so a forget() that lands during #session (any of its awaits: discovery,
+        // the popup, the token/refresh grant) is detected below.
+        const generation = this.#generationOf(issuer.href)
         const session = await this.#session(issuer)
+
+        // Supersession fence — re-check before arming: if the session was
+        // forgotten while this upgrade was in flight, fail closed rather than
+        // attach the discarded session's credentials to the request.
+        if (this.#generationOf(issuer.href) !== generation) {
+            throw new SessionForgottenError(issuer)
+        }
 
         const headers = new Headers(request.headers)
 
@@ -66,6 +88,39 @@ export class DPoPTokenProvider implements TokenProvider {
         headers.set("Authorization", ["DPoP", session.accessToken].join(" "))
 
         return new Request(request, {headers})
+    }
+
+    /**
+     * Definitively drops the cached session for the request's issuer — the
+     * "log out" / "switch account" primitive.
+     *
+     * @remarks
+     * Unlike {@link invalidate} (which is *transient*: it marks the access token
+     * stale but KEEPS the durable refresh token, so the next {@link upgrade}
+     * silently re-establishes the same session), `forget` is *definitive*: it
+     * evicts the whole session — refresh token included — so the session does
+     * NOT silently come back. The next {@link upgrade} runs a fresh
+     * authorization-code flow.
+     *
+     * It is supersession-safe: any {@link upgrade} for this issuer that is
+     * already in flight will fail closed with {@link SessionForgottenError}
+     * instead of completing with the forgotten session's credentials, and an
+     * in-flight renewal cannot resurrect the evicted session.
+     */
+    async forget(request: Request): Promise<void> {
+        const issuer = await this.#getIssuer(request)
+
+        // Supersede first, then evict: an in-flight upgrade re-reads the bumped
+        // generation at its post-#session fence, and an in-flight #begin (which
+        // set the cache entry before its awaits) never re-installs after this
+        // delete, so the session cannot be resurrected.
+        this.#generations.set(issuer.href, this.#generationOf(issuer.href) + 1)
+        this.#sessions.delete(issuer.href)
+    }
+
+    /** The current supersession counter for an issuer (0 when never forgotten). */
+    #generationOf(issuerHref: string): number {
+        return this.#generations.get(issuerHref) ?? 0
     }
 
     /**
