@@ -27,6 +27,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "test": "vitest run"
   },
   "license": "MIT",
