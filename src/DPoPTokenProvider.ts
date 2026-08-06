@@ -12,6 +12,8 @@ interface IssuerSession {
     authorizationServer: oauth.AuthorizationServer
     clientRegistration: ClientRegistration
     dpopKey: CryptoKeyPair
+    /** The token endpoint response the session was established from, kept whole so callers can read its claims. */
+    tokenEndpointResponse: oauth.TokenEndpointResponse
     accessToken: string
     /** Epoch milliseconds after which the access token is considered expired, or undefined when the server gave no expiry. */
     expiresAt: number | undefined
@@ -62,6 +64,32 @@ export class DPoPTokenProvider implements TokenProvider {
         headers.set("Authorization", ["DPoP", session.accessToken].join(" "))
 
         return new Request(request, {headers})
+    }
+
+    /**
+     * The token endpoint response the issuer's current session rests on, as
+     * processed by oauth4webapi.
+     *
+     * @remarks
+     * Resolves to undefined until a flow for this issuer has completed, and
+     * never starts one: an app that signed in with only an issuer calls this
+     * after its first authenticated request to read what the issuer said about
+     * the session — `webIdFrom` takes the WebID out of it.
+     *
+     * The response carries the session's tokens, so treat it as a secret.
+     */
+    async tokenEndpointResponse(issuer: URL): Promise<oauth.TokenEndpointResponse | undefined> {
+        const pending = this.#sessions.get(issuer.href)
+        if (pending === undefined) {
+            return undefined
+        }
+
+        try {
+            return (await pending).tokenEndpointResponse
+        } catch {
+            // A flow that failed established nothing to report; #session retries it.
+            return undefined
+        }
     }
 
     /**
@@ -171,6 +199,7 @@ export class DPoPTokenProvider implements TokenProvider {
             authorizationServer,
             clientRegistration,
             dpopKey,
+            tokenEndpointResponse: tokenResult,
             accessToken: tokenResult.access_token,
             expiresAt: expiresAt(tokenResult),
         }
