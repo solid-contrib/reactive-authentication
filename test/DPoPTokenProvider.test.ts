@@ -91,3 +91,56 @@ describe("DPoPTokenProvider session cache", () => {
         expect(getCode).toHaveBeenCalledTimes(2)
     })
 })
+
+describe("DPoPTokenProvider token endpoint response", () => {
+    beforeEach(async () => {
+        as = await createFakeAuthorizationServer()
+        vi.stubGlobal("fetch", as.fetch)
+    })
+
+    it("reports the response the session rests on once a flow has completed", async () => {
+        const {provider} = makeProvider()
+
+        const upgraded = await provider.upgrade(new Request("https://pod.test/private"))
+        const reported = await provider.tokenEndpointResponse(new URL(as.issuer))
+
+        expect(upgraded.headers.get("Authorization")).toBe(`DPoP ${reported?.access_token}`)
+    })
+
+    it("reports nothing before a flow has run, without starting one", async () => {
+        const {provider, getCode} = makeProvider()
+
+        await expect(provider.tokenEndpointResponse(new URL(as.issuer))).resolves.toBeUndefined()
+        expect(getCode).not.toHaveBeenCalled()
+    })
+
+    it("reports the renewed response once the session has been re-established", async () => {
+        const {provider} = makeProvider()
+
+        await provider.upgrade(new Request("https://pod.test/a"))
+        const first = await provider.tokenEndpointResponse(new URL(as.issuer))
+
+        // Step past the reported expiry (minus the skew allowance).
+        vi.useFakeTimers()
+        vi.setSystemTime(Date.now() + 3601 * 1000)
+
+        await provider.upgrade(new Request("https://pod.test/b"))
+        const second = await provider.tokenEndpointResponse(new URL(as.issuer))
+
+        expect(second?.access_token).not.toBe(first?.access_token)
+    })
+
+    it("reports nothing for a flow that fails, rather than the failure", async () => {
+        let failCode!: (reason: Error) => void
+        const getCode = vi.fn(() => new Promise<string>((_, reject) => {failCode = reject}))
+        const {provider} = makeProvider(getCode)
+
+        const upgrade = provider.upgrade(new Request("https://pod.test/a"))
+        await vi.waitUntil(() => getCode.mock.calls.length === 1)
+        const reported = provider.tokenEndpointResponse(new URL(as.issuer))
+        failCode(new Error("user closed the popup"))
+
+        await expect(upgrade).rejects.toThrow("user closed the popup")
+        await expect(reported).resolves.toBeUndefined()
+    })
+})

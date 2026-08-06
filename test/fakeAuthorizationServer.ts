@@ -20,6 +20,8 @@ export interface FakeAuthorizationServerOptions {
     scopesSupported?: string[]
     /** `grant_types_supported` advertised by discovery. Default ["authorization_code"]. */
     grantTypesSupported?: string[]
+    /** The `webid` claim put in the id_token, as Solid-OIDC requires. Pass null to omit it. */
+    webId?: string | null
 }
 
 export interface AuthorizationRequestRecord {
@@ -82,6 +84,8 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
         const header = base64url(JSON.stringify({alg: "ES256", kid: "test"}))
         const now = Math.floor(Date.now() / 1000)
         const claims: Record<string, unknown> = {iss: issuer, sub: "user", aud: clientId, iat: now, exp: now + 600}
+        const webId = options.webId === undefined ? "https://pod.test/profile/card#me" : options.webId
+        if (webId !== null) claims.webid = webId
         if (nonce !== null) claims.nonce = nonce
         const payload = base64url(JSON.stringify(claims))
         const signature = await crypto.subtle.sign({name: "ECDSA", hash: "SHA-256"}, keys.privateKey, encoder.encode(`${header}.${payload}`))

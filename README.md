@@ -71,6 +71,24 @@ manager.registerGlobally()
 const response = await fetch(requestUri)
 ```
 
+### Learn who is signed in
+
+Users sign in by picking an Authorization Server, so the app does not know their
+WebID until the server asserts one. The `DPoPTokenProvider` reports the token
+endpoint response its session rests on, and `webIdFrom` reads out of it the
+`webid` claim that Solid OIDC requires the ID Token to carry:
+
+```js
+import { webIdFrom } from "@solid/reactive-authentication"
+
+const issuer = await getIssuer(new Request(requestUri))
+const tokens = await provider.tokenEndpointResponse(issuer)
+const webId = tokens === undefined ? undefined : webIdFrom(tokens)
+```
+
+There is nothing to report until a flow for that Authorization Server has
+completed, and asking never starts one.
+
 ## Run the demo
 
 To compile,
