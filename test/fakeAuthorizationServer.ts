@@ -1,14 +1,13 @@
-/**
- * A minimal in-memory OAuth 2.0 / OpenID Connect authorization server for unit
- * tests, exposed as a `fetch` implementation to stub `globalThis.fetch` with.
- *
- * It implements just enough for oauth4webapi's strict client side: discovery,
- * JWKS, dynamic client registration, and a token endpoint handling the
- * `authorization_code` and `refresh_token` grants — including ES256-signed ID
- * tokens (oauth4webapi requires a valid ID token whenever a nonce is expected)
- * and refresh-token rotation.
- */
+import { exportJWK, SignJWT } from "jose"
 
+/**
+ * Just enough authorization server for oauth4webapi's strict client side:
+ * discovery, JWKS, dynamic client registration, and a token endpoint.
+ *
+ * @remarks Exposed as a `fetch` to stub `globalThis.fetch` with. Signing uses
+ * jose; the rest is deliberately small so tests can control expiry, refresh
+ * token rotation, and how many times the user was prompted.
+ */
 export interface FakeAuthorizationServerOptions {
     /** `expires_in` reported on every token response. Default 3600. */
     expiresIn?: number
@@ -48,15 +47,6 @@ export interface FakeAuthorizationServer {
     readonly activeRefreshTokens: Set<string>
 }
 
-const encoder = new TextEncoder()
-
-function base64url(data: Uint8Array | string): string {
-    const bytes = typeof data === "string" ? encoder.encode(data) : data
-    let binary = ""
-    for (const b of bytes) binary += String.fromCharCode(b)
-    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-}
-
 function json(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {status, headers: {"content-type": "application/json"}})
 }
@@ -68,7 +58,7 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
     const rotate = options.rotateRefreshTokens ?? true
 
     const keys = await crypto.subtle.generateKey({name: "ECDSA", namedCurve: "P-256"}, true, ["sign", "verify"]) as CryptoKeyPair
-    const publicJwk = await crypto.subtle.exportKey("jwk", keys.publicKey)
+    const publicJwk = await exportJWK(keys.publicKey)
 
     let counter = 0
     /** nonce + client of each outstanding authorization code */
@@ -79,13 +69,16 @@ export async function createFakeAuthorizationServer(options: FakeAuthorizationSe
     const tokenRequests: URLSearchParams[] = []
 
     async function signIdToken(clientId: string, nonce: string | null): Promise<string> {
-        const header = base64url(JSON.stringify({alg: "ES256", kid: "test"}))
-        const now = Math.floor(Date.now() / 1000)
-        const claims: Record<string, unknown> = {iss: issuer, sub: "user", aud: clientId, iat: now, exp: now + 600}
-        if (nonce !== null) claims.nonce = nonce
-        const payload = base64url(JSON.stringify(claims))
-        const signature = await crypto.subtle.sign({name: "ECDSA", hash: "SHA-256"}, keys.privateKey, encoder.encode(`${header}.${payload}`))
-        return `${header}.${payload}.${base64url(new Uint8Array(signature))}`
+        const claims = nonce === null ? {} : {nonce}
+
+        return new SignJWT(claims)
+            .setProtectedHeader({alg: "ES256", kid: "test"})
+            .setIssuer(issuer)
+            .setSubject("user")
+            .setAudience(clientId)
+            .setIssuedAt()
+            .setExpirationTime("10m")
+            .sign(keys.privateKey)
     }
 
     function tokenBody(refreshable: boolean, idToken?: string) {

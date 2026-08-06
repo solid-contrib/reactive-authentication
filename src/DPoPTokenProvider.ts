@@ -3,49 +3,61 @@ import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { GetIssuerCallback } from "./GetIssuerCallback.js"
+import type { GetSessionKeyCallback } from "./GetSessionKeyCallback.js"
+import type { SessionCache } from "./SessionCache.js"
+import { MemorySessionCache } from "./MemorySessionCache.js"
 
 /** The client metadata shape produced by dynamic client registration. */
 type ClientRegistration = Awaited<ReturnType<typeof oauth.processDynamicClientRegistrationResponse>>
 
-/** Authentication state for one issuer, reused across upgrades. */
-interface IssuerSession {
+/**
+ * An established authentication, reused across upgrades.
+ *
+ * @remarks Structured cloneable, so a {@link SessionCache} can persist it, but
+ * not JSON serialisable because of the non extractable {@link CryptoKeyPair}.
+ */
+export interface DPoPSession {
     authorizationServer: oauth.AuthorizationServer
     clientRegistration: ClientRegistration
     dpopKey: CryptoKeyPair
     accessToken: string
-    /** Epoch milliseconds after which the access token is considered expired, or undefined when the server gave no expiry. */
+    /** Epoch milliseconds, or undefined when the server reported no expiry. */
     expiresAt: number | undefined
 }
 
-/**
- * Refresh this much before the server-reported expiry, so clock skew between us
- * and the resource server does not produce a window of rejected requests.
- */
+export interface DPoPTokenProviderOptions {
+    /** Defaults to {@link MemorySessionCache}. */
+    sessionCache?: SessionCache<DPoPSession>
+
+    /** Defaults to the issuer, so one session is shared per authorization server. */
+    getSessionKey?: GetSessionKeyCallback
+}
+
+/** Renew this long before the reported expiry, to absorb clock skew. */
 const expirySkewMs = 30_000
 
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
     readonly #getIssuer: GetIssuerCallback
+    readonly #getSessionKey: GetSessionKeyCallback
+    readonly #sessions: SessionCache<DPoPSession>
+
+    /** In flight flows, so concurrent upgrades share one popup. */
+    readonly #pending = new Map<string, Promise<DPoPSession>>()
 
     /**
-     * Single-flight session cache per issuer: concurrent upgrades share one
-     * authorization-code flow (one popup), and later upgrades reuse the
-     * established token until it expires instead of re-running the flow.
-     */
-    readonly #sessions = new Map<string, Promise<IssuerSession>>()
-
-    /**
-     * The shared authentication work is provider-owned, so it is deliberately
-     * not tied to any single request's AbortSignal — aborting one request must
-     * not cancel the login that other concurrent upgrades are waiting on.
+     * Provider owned, so aborting one request does not cancel the login that
+     * other concurrent upgrades are waiting on.
      */
     readonly #authSignal = new AbortController().signal
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback) {
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback, options: DPoPTokenProviderOptions = {}) {
         this.#getCode = getCodeCallback
         this.#callbackUri = callbackUri
         this.#getIssuer = getIssuerCallback
+        this.#getSessionKey = options.getSessionKey ?? (async (_, issuer) => issuer.href)
+        this.#sessions = options.sessionCache ?? new MemorySessionCache()
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -54,7 +66,7 @@ export class DPoPTokenProvider implements TokenProvider {
 
     async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
-        const session = await this.#session(issuer)
+        const session = await this.#session(request, issuer)
 
         const headers = new Headers(request.headers)
 
@@ -64,46 +76,34 @@ export class DPoPTokenProvider implements TokenProvider {
         return new Request(request, {headers})
     }
 
-    /**
-     * Returns the cached session for the issuer, renewing it when expired and
-     * establishing it when absent. A failed flow is not cached, so the next
-     * upgrade retries.
-     */
-    async #session(issuer: URL): Promise<IssuerSession> {
-        const pending = this.#sessions.get(issuer.href)
-        if (pending === undefined) {
-            return this.#begin(issuer, this.#authenticate(issuer))
+    /** Reuses a live session, and otherwise runs the flow once per key. */
+    async #session(request: Request, issuer: URL): Promise<DPoPSession> {
+        const key = await this.#getSessionKey(request, issuer)
+
+        const cached = await this.#sessions.get(key)
+        if (cached !== undefined && !hasExpired(cached)) {
+            return cached
         }
 
-        const session = await pending
-        if (!hasExpired(session)) {
-            return session
+        const pending = this.#pending.get(key)
+        if (pending !== undefined) {
+            return pending
         }
 
-        // Renew, unless a concurrent caller already replaced the expired session.
-        if (this.#sessions.get(issuer.href) === pending) {
-            this.#sessions.delete(issuer.href)
-            return this.#begin(issuer, this.#authenticate(issuer))
-        }
-
-        return this.#session(issuer)
-    }
-
-    /** Caches the in-flight work; evicts it on failure so the flow can be retried. */
-    async #begin(issuer: URL, work: Promise<IssuerSession>): Promise<IssuerSession> {
-        this.#sessions.set(issuer.href, work)
+        // Not cached on failure, so the next upgrade retries.
+        const work = this.#authenticate(issuer)
+        this.#pending.set(key, work)
         try {
-            return await work
-        } catch (e) {
-            if (this.#sessions.get(issuer.href) === work) {
-                this.#sessions.delete(issuer.href)
-            }
-            throw e
+            const session = await work
+            await this.#sessions.set(key, session)
+            return session
+        } finally {
+            this.#pending.delete(key)
         }
     }
 
-    /** The full authorization-code flow: discovery → registration → PKCE/DPoP code grant. */
-    async #authenticate(issuer: URL): Promise<IssuerSession> {
+    /** Discovery, registration, then the PKCE and DPoP code grant. */
+    async #authenticate(issuer: URL): Promise<DPoPSession> {
         const signal = this.#authSignal
 
         const discoveryResponse = await oauth.discoveryRequest(issuer, {signal})
@@ -201,7 +201,7 @@ function expiresAt(token: oauth.TokenEndpointResponse): number | undefined {
     return token.expires_in === undefined ? undefined : Date.now() + token.expires_in * 1000 - expirySkewMs
 }
 
-function hasExpired(session: IssuerSession): boolean {
+function hasExpired(session: DPoPSession): boolean {
     return session.expiresAt !== undefined && Date.now() >= session.expiresAt
 }
 

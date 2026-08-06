@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { DPoPTokenProvider } from "../src/DPoPTokenProvider.js"
+import { DPoPTokenProvider, type DPoPSession, type DPoPTokenProviderOptions } from "../src/DPoPTokenProvider.js"
+import { MemorySessionCache } from "../src/MemorySessionCache.js"
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from "./fakeAuthorizationServer.js"
 
 const callbackUri = "https://app.test/callback.html"
 
 let as: FakeAuthorizationServer
 
-function makeProvider(getCode = vi.fn((url: URL) => as.authorize(url))) {
-    const provider = new DPoPTokenProvider(callbackUri, getCode, async () => new URL(as.issuer))
+function makeProvider(getCode = vi.fn((url: URL) => as.authorize(url)), options: DPoPTokenProviderOptions = {}) {
+    const provider = new DPoPTokenProvider(callbackUri, getCode, async () => new URL(as.issuer), options)
     return {provider, getCode}
 }
 
@@ -89,5 +90,53 @@ describe("DPoPTokenProvider session cache", () => {
 
         expect(second.headers.get("Authorization")).toMatch(/^DPoP at-\d+$/)
         expect(getCode).toHaveBeenCalledTimes(2)
+    })
+})
+
+describe("DPoPTokenProvider session cache configuration", () => {
+    beforeEach(async () => {
+        as = await createFakeAuthorizationServer()
+        vi.stubGlobal("fetch", as.fetch)
+    })
+
+    it("defaults to one session per issuer", async () => {
+        const {provider, getCode} = makeProvider()
+
+        await provider.upgrade(new Request("https://pod.test/a"))
+        await provider.upgrade(new Request("https://other.test/b"))
+
+        expect(getCode).toHaveBeenCalledTimes(1)
+    })
+
+    it("honours a custom session key, so callers can scope sessions narrower than the issuer", async () => {
+        const getCode = vi.fn((url: URL) => as.authorize(url))
+        const {provider} = makeProvider(getCode, {getSessionKey: async request => new URL(request.url).origin})
+
+        await provider.upgrade(new Request("https://pod.test/a"))
+        await provider.upgrade(new Request("https://pod.test/b"))
+        await provider.upgrade(new Request("https://other.test/c"))
+
+        expect(getCode).toHaveBeenCalledTimes(2)
+    })
+
+    it("stores sessions in a caller supplied cache", async () => {
+        const cache = new MemorySessionCache<DPoPSession>()
+        const {provider} = makeProvider(undefined, {sessionCache: cache})
+
+        await provider.upgrade(new Request("https://pod.test/a"))
+
+        expect(await cache.get(new URL(as.issuer).href)).toMatchObject({accessToken: expect.stringMatching(/^at-\d+$/)})
+    })
+
+    it("reuses a session already present in a shared cache, without prompting", async () => {
+        const cache = new MemorySessionCache<DPoPSession>()
+        const first = makeProvider(undefined, {sessionCache: cache})
+        await first.provider.upgrade(new Request("https://pod.test/a"))
+
+        const second = makeProvider(undefined, {sessionCache: cache})
+        const upgraded = await second.provider.upgrade(new Request("https://pod.test/b"))
+
+        expect(second.getCode).not.toHaveBeenCalled()
+        expect(upgraded.headers.get("Authorization")).toBe(`DPoP ${(await cache.get(new URL(as.issuer).href))!.accessToken}`)
     })
 })
