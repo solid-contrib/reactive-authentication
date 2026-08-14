@@ -3,16 +3,61 @@ import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { GetIssuerCallback } from "./GetIssuerCallback.js"
+import type { GetSessionKeyCallback } from "./GetSessionKeyCallback.js"
+import type { SessionCache } from "./SessionCache.js"
+import { MemorySessionCache } from "./MemorySessionCache.js"
+
+/** The client metadata shape produced by dynamic client registration. */
+type ClientRegistration = Awaited<ReturnType<typeof oauth.processDynamicClientRegistrationResponse>>
+
+/**
+ * An established authentication, reused across upgrades.
+ *
+ * @remarks Structured cloneable, so a {@link SessionCache} can persist it, but
+ * not JSON serialisable because of the non extractable {@link CryptoKeyPair}.
+ */
+export interface DPoPSession {
+    authorizationServer: oauth.AuthorizationServer
+    clientRegistration: ClientRegistration
+    dpopKey: CryptoKeyPair
+    accessToken: string
+    /** Epoch milliseconds, or undefined when the server reported no expiry. */
+    expiresAt: number | undefined
+}
+
+export interface DPoPTokenProviderOptions {
+    /** Defaults to {@link MemorySessionCache}. */
+    sessionCache?: SessionCache<DPoPSession>
+
+    /** Defaults to the issuer, so one session is shared per authorization server. */
+    getSessionKey?: GetSessionKeyCallback
+}
+
+/** Renew this long before the reported expiry, to absorb clock skew. */
+const expirySkewMs = 30_000
 
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
     readonly #getIssuer: GetIssuerCallback
+    readonly #getSessionKey: GetSessionKeyCallback
+    readonly #sessions: SessionCache<DPoPSession>
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback) {
+    /** In flight flows, so concurrent upgrades share one popup. */
+    readonly #pending = new Map<string, Promise<DPoPSession>>()
+
+    /**
+     * Provider owned, so aborting one request does not cancel the login that
+     * other concurrent upgrades are waiting on.
+     */
+    readonly #authSignal = new AbortController().signal
+
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback, options: DPoPTokenProviderOptions = {}) {
         this.#getCode = getCodeCallback
         this.#callbackUri = callbackUri
         this.#getIssuer = getIssuerCallback
+        this.#getSessionKey = options.getSessionKey ?? (async (_, issuer) => issuer.href)
+        this.#sessions = options.sessionCache ?? new MemorySessionCache()
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -21,11 +66,50 @@ export class DPoPTokenProvider implements TokenProvider {
 
     async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
+        const session = await this.#session(request, issuer)
 
-        const discoveryResponse = await oauth.discoveryRequest(issuer, {signal: request.signal})
+        const headers = new Headers(request.headers)
+
+        headers.set("DPoP", await DPoP.generateProof(session.dpopKey, request.url, request.method, undefined, session.accessToken))
+        headers.set("Authorization", ["DPoP", session.accessToken].join(" "))
+
+        return new Request(request, {headers})
+    }
+
+    /** Reuses a live session, and otherwise runs the flow once per key. */
+    async #session(request: Request, issuer: URL): Promise<DPoPSession> {
+        const key = await this.#getSessionKey(request, issuer)
+
+        const cached = await this.#sessions.get(key)
+        if (cached !== undefined && !hasExpired(cached)) {
+            return cached
+        }
+
+        const pending = this.#pending.get(key)
+        if (pending !== undefined) {
+            return pending
+        }
+
+        // Not cached on failure, so the next upgrade retries.
+        const work = this.#authenticate(issuer)
+        this.#pending.set(key, work)
+        try {
+            const session = await work
+            await this.#sessions.set(key, session)
+            return session
+        } finally {
+            this.#pending.delete(key)
+        }
+    }
+
+    /** Discovery, registration, then the PKCE and DPoP code grant. */
+    async #authenticate(issuer: URL): Promise<DPoPSession> {
+        const signal = this.#authSignal
+
+        const discoveryResponse = await oauth.discoveryRequest(issuer, {signal})
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal: request.signal})
+        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal})
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
@@ -56,7 +140,7 @@ export class DPoPTokenProvider implements TokenProvider {
             }
         }
 
-        const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
+        const authorizationCodeResponse = await this.#getCode(authorizationUrl, signal)
 
         let authorizationCodeParams
         try {
@@ -72,23 +156,24 @@ export class DPoPTokenProvider implements TokenProvider {
                 console.debug("Authorization server requires user interaction, retrying without prompt")
 
                 authorizationUrl.searchParams.delete("prompt")
-                const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
+                const authorizationCodeResponse = await this.#getCode(authorizationUrl, signal)
                 authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
             } else {
                 throw e
             }
         }
 
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal: request.signal})
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal})
 
         const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
 
-        const headers = new Headers(request.headers)
-
-        headers.set("DPoP", await DPoP.generateProof(dpopKey, request.url, request.method, undefined, tokenResult.access_token))
-        headers.set("Authorization", ["DPoP", tokenResult.access_token].join(" "))
-
-        return new Request(request, {headers})
+        return {
+            authorizationServer,
+            clientRegistration,
+            dpopKey,
+            accessToken: tokenResult.access_token,
+            expiresAt: expiresAt(tokenResult),
+        }
     }
 
     private getClientAuth(issuer: string, client: oauth.OmitSymbolProperties<oauth.Client>): oauth.ClientAuth {
@@ -110,6 +195,14 @@ export class DPoPTokenProvider implements TokenProvider {
 
         return nonce
     }
+}
+
+function expiresAt(token: oauth.TokenEndpointResponse): number | undefined {
+    return token.expires_in === undefined ? undefined : Date.now() + token.expires_in * 1000 - expirySkewMs
+}
+
+function hasExpired(session: DPoPSession): boolean {
+    return session.expiresAt !== undefined && Date.now() >= session.expiresAt
 }
 
 function isEssMissingIssInteractionNeeded(e: unknown) {
