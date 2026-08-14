@@ -1,190 +1,76 @@
-import { exportJWK, SignJWT } from "jose"
-
-/**
- * Just enough authorization server for oauth4webapi's strict client side:
- * discovery, JWKS, dynamic client registration, and a token endpoint.
- *
- * @remarks Exposed as a `fetch` to stub `globalThis.fetch` with. Signing uses
- * jose; the rest is deliberately small so tests can control expiry, refresh
- * token rotation, and how many times the user was prompted.
- */
-export interface FakeAuthorizationServerOptions {
-    /** `expires_in` reported on every token response. Default 3600. */
-    expiresIn?: number
-    /** Whether token responses include a refresh token. Default false. */
-    issueRefreshTokens?: boolean
-    /** Whether the refresh-token grant rotates the refresh token. Default true. */
-    rotateRefreshTokens?: boolean
-    /** `scopes_supported` advertised by discovery. Default ["openid", "webid"]. */
-    scopesSupported?: string[]
-    /** `grant_types_supported` advertised by discovery. Default ["authorization_code"]. */
-    grantTypesSupported?: string[]
-}
-
-export interface AuthorizationRequestRecord {
-    scope: string | null
-    prompt: string | null
-    clientId: string | null
-}
+import { Events, OAuth2Server } from "oauth2-mock-server"
 
 export interface FakeAuthorizationServer {
     readonly issuer: string
-    /** Stub `globalThis.fetch` with this. */
     fetch: typeof globalThis.fetch
-    /**
-     * The "user agent": simulates visiting the authorization endpoint and
-     * returns the redirect-back URL carrying `code` and `state`. Use as the
-     * provider's `getCode` callback.
-     */
     authorize(authorizationUrl: URL): Promise<string>
-    /** Every authorization request seen, oldest first. */
-    readonly authorizationRequests: AuthorizationRequestRecord[]
-    /** Client registration metadata bodies received, oldest first. */
     readonly registrations: Record<string, unknown>[]
-    /** Form bodies received by the token endpoint, oldest first. */
-    readonly tokenRequests: URLSearchParams[]
-    /** Refresh tokens that are currently redeemable. */
-    readonly activeRefreshTokens: Set<string>
+    close(): Promise<void>
 }
 
-function json(body: unknown, status = 200): Response {
-    return new Response(JSON.stringify(body), {status, headers: {"content-type": "application/json"}})
-}
+const issuer = "https://as.test"
 
-export async function createFakeAuthorizationServer(options: FakeAuthorizationServerOptions = {}): Promise<FakeAuthorizationServer> {
-    const issuer = "https://as.test"
-    const expiresIn = options.expiresIn ?? 3600
-    const issueRefreshTokens = options.issueRefreshTokens ?? false
-    const rotate = options.rotateRefreshTokens ?? true
-
-    const keys = await crypto.subtle.generateKey({name: "ECDSA", namedCurve: "P-256"}, true, ["sign", "verify"]) as CryptoKeyPair
-    const publicJwk = await exportJWK(keys.publicKey)
-
-    let counter = 0
-    /** nonce + client of each outstanding authorization code */
-    const codes = new Map<string, {nonce: string | null, clientId: string | null}>()
-    const activeRefreshTokens = new Set<string>()
-    const authorizationRequests: AuthorizationRequestRecord[] = []
+export async function createFakeAuthorizationServer(): Promise<FakeAuthorizationServer> {
+    const nativeFetch = globalThis.fetch
     const registrations: Record<string, unknown>[] = []
-    const tokenRequests: URLSearchParams[] = []
+    const server = new OAuth2Server()
 
-    async function signIdToken(clientId: string, nonce: string | null): Promise<string> {
-        const claims = nonce === null ? {} : {nonce}
+    server.service.addRoute("POST", "/register", (request, response) => {
+        const metadata = request.body as Record<string, unknown>
+        registrations.push(metadata)
+        response.writeHead(201, {"content-type": "application/json"})
+        response.end(JSON.stringify({
+            client_id: "client",
+            redirect_uris: metadata.redirect_uris,
+            response_types: ["code"],
+            grant_types: ["authorization_code"],
+            token_endpoint_auth_method: "none",
+        }))
+    })
+    server.service.on(Events.BeforeResponse, response => {
+        response.body.token_type = "DPoP"
+    })
 
-        return new SignJWT(claims)
-            .setProtectedHeader({alg: "ES256", kid: "test"})
-            .setIssuer(issuer)
-            .setSubject("user")
-            .setAudience(clientId)
-            .setIssuedAt()
-            .setExpirationTime("10m")
-            .sign(keys.privateKey)
-    }
+    await server.issuer.keys.generate("RS256")
+    await server.start(0, "127.0.0.1")
+    const upstream = `http://127.0.0.1:${server.address().port}`
+    // Present HTTPS to oauth4webapi while keeping the test listener certificate-free.
+    server.issuer.url = issuer
 
-    function tokenBody(refreshable: boolean, idToken?: string) {
-        const body: Record<string, unknown> = {
-            access_token: `at-${++counter}`,
-            token_type: "DPoP",
-            expires_in: expiresIn,
-            scope: "openid webid",
+    async function fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+        const request = new Request(input, init)
+        const source = new URL(request.url)
+        if (source.origin !== issuer) {
+            throw new Error(`Unexpected request to ${source.origin}`)
         }
-        if (idToken !== undefined) body.id_token = idToken
-        if (refreshable) {
-            const refreshToken = `rt-${counter}`
-            activeRefreshTokens.add(refreshToken)
-            body.refresh_token = refreshToken
+        const target = new URL(`${source.pathname}${source.search}`, upstream)
+        const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer()
+        const response = await nativeFetch(target, {
+            method: request.method,
+            headers: request.headers,
+            body,
+            redirect: request.redirect,
+            signal: request.signal,
+        })
+
+        if (source.pathname === "/.well-known/openid-configuration") {
+            return Response.json({...await response.json(), registration_endpoint: `${issuer}/register`})
         }
-        return body
-    }
-
-    async function handle(request: Request): Promise<Response> {
-        const url = new URL(request.url)
-
-        if (url.href === `${issuer}/.well-known/openid-configuration`) {
-            return json({
-                issuer,
-                authorization_endpoint: `${issuer}/authorize`,
-                token_endpoint: `${issuer}/token`,
-                registration_endpoint: `${issuer}/register`,
-                jwks_uri: `${issuer}/jwks`,
-                code_challenge_methods_supported: ["S256"],
-                id_token_signing_alg_values_supported: ["ES256"],
-                scopes_supported: options.scopesSupported ?? ["openid", "webid"],
-                grant_types_supported: options.grantTypesSupported ?? (issueRefreshTokens ? ["authorization_code", "refresh_token"] : ["authorization_code"]),
-            })
-        }
-
-        if (url.pathname === "/jwks") {
-            return json({keys: [{...publicJwk, alg: "ES256", use: "sig", kid: "test"}]})
-        }
-
-        if (url.pathname === "/register") {
-            const metadata = await request.json() as Record<string, unknown>
-            registrations.push(metadata)
-            return json({
-                client_id: `client-${++counter}`,
-                redirect_uris: metadata.redirect_uris,
-                response_types: ["code"],
-                grant_types: metadata.grant_types ?? ["authorization_code"],
-                token_endpoint_auth_method: "none",
-            }, 201)
-        }
-
-        if (url.pathname === "/token") {
-            const params = new URLSearchParams(await request.text())
-            tokenRequests.push(params)
-
-            if (params.get("grant_type") === "authorization_code") {
-                const code = codes.get(params.get("code") ?? "")
-                if (code === undefined) {
-                    return json({error: "invalid_grant"}, 400)
-                }
-                codes.delete(params.get("code")!)
-                return json(tokenBody(issueRefreshTokens, await signIdToken(params.get("client_id") ?? code.clientId ?? "", code.nonce)))
-            }
-
-            if (params.get("grant_type") === "refresh_token" && issueRefreshTokens) {
-                const presented = params.get("refresh_token") ?? ""
-                if (!activeRefreshTokens.has(presented)) {
-                    return json({error: "invalid_grant"}, 400)
-                }
-                if (rotate) {
-                    // Rotation (RFC 9700 §4.14.2): retire the presented token and issue a replacement.
-                    activeRefreshTokens.delete(presented)
-                    return json(tokenBody(true))
-                }
-                // No rotation: the presented token stays active and the response carries no new one (RFC 6749 §6).
-                return json(tokenBody(false))
-            }
-
-            return json({error: "unsupported_grant_type"}, 400)
-        }
-
-        return new Response("not found", {status: 404})
+        return response
     }
 
     return {
         issuer,
-        fetch: (input, init) => handle(new Request(input, init)),
+        fetch,
         async authorize(authorizationUrl: URL): Promise<string> {
-            authorizationRequests.push({
-                scope: authorizationUrl.searchParams.get("scope"),
-                prompt: authorizationUrl.searchParams.get("prompt"),
-                clientId: authorizationUrl.searchParams.get("client_id"),
-            })
-            const code = `code-${++counter}`
-            codes.set(code, {
-                nonce: authorizationUrl.searchParams.get("nonce"),
-                clientId: authorizationUrl.searchParams.get("client_id"),
-            })
-            const redirect = new URL(authorizationUrl.searchParams.get("redirect_uri")!)
-            redirect.searchParams.set("code", code)
-            redirect.searchParams.set("state", authorizationUrl.searchParams.get("state")!)
-            return redirect.href
+            const response = await fetch(new Request(authorizationUrl, {redirect: "manual"}))
+            const redirect = response.headers.get("location")
+            if (redirect === null) {
+                throw new Error("Authorization server did not redirect")
+            }
+            return redirect
         },
-        authorizationRequests,
         registrations,
-        tokenRequests,
-        activeRefreshTokens,
+        close: () => server.stop(),
     }
 }
