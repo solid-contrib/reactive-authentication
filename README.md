@@ -71,6 +71,32 @@ manager.registerGlobally()
 const response = await fetch(requestUri)
 ```
 
+### Restrict which origins receive credentials (recommended)
+
+Once global `fetch` is patched, **every** request the page makes flows through
+the reactive layer — including requests to third-party origins (a CDN, an image
+host, an analytics beacon, a URL embedded in fetched data). Without a boundary,
+any of those origins can answer `401` to trigger the authorization flow and
+receive a retry carrying the user's credentials.
+
+Pass `allowedOrigins` — your pod/storage origins — so credentials are only ever
+attached to origins you trust. A `401` from any other origin is returned
+untouched:
+
+```js
+import { CredentialBoundary, ReactiveFetchManager } from "@solid/reactive-authentication"
+
+const boundary = new CredentialBoundary(["https://alice.pod.example"])
+const manager = new ReactiveFetchManager([provider], { allowedOrigins: boundary })
+
+// The boundary can be widened in place later, without disrupting the session:
+boundary.add("https://shared.pod.example")
+```
+
+`allowedOrigins` also accepts a plain iterable of origins or origin predicates.
+It applies to `ReactiveAuthenticationClient` too. When omitted, the previous
+"upgrade every `401`" behaviour is preserved and a one-time warning is logged.
+
 ## Run the demo
 
 To compile,

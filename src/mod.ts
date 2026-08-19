@@ -1,5 +1,6 @@
 export * from "./AuthorizationCodeFlow.js"
 export * from "./BearerTokenProvider.js"
+export * from "./CredentialBoundary.js"
 export * from "./DPoPTokenProvider.js"
 export * from "./ReactiveFetchManager.js"
 export * from "./ReactiveFetchWorkerManager.js"
