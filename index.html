@@ -23,7 +23,7 @@
             const issuerUi = document.querySelector("idp-picker")
             const callbackUri = new URL("/callback.html", location.href).toString()
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerUi.getIssuer.bind(issuerUi))
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerUi)
 
             const fetch = new ReactiveFetchManager([dPoPTokenProvider]).fetch
 

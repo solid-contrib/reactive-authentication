@@ -2,17 +2,17 @@ import * as oauth from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
-import type { GetIssuerCallback } from "./GetIssuerCallback.js"
+import type { IssuerProvider } from "./IssuerProvider.js"
 
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
-    readonly #getIssuer: GetIssuerCallback
+    readonly #issuerProvider: IssuerProvider
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback) {
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, issuerProvider: IssuerProvider) {
         this.#getCode = getCodeCallback
         this.#callbackUri = callbackUri
-        this.#getIssuer = getIssuerCallback
+        this.#issuerProvider = issuerProvider
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -20,7 +20,7 @@ export class DPoPTokenProvider implements TokenProvider {
     }
 
     async upgrade(request: Request): Promise<Request> {
-        const issuer = await this.#getIssuer(request)
+        const issuer = await this.#issuerProvider.getIssuer(request)
 
         const discoveryResponse = await oauth.discoveryRequest(issuer, {signal: request.signal})
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
