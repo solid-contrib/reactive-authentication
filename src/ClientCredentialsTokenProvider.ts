@@ -2,6 +2,7 @@ import * as oauth from "oauth4webapi"
 import { AuthorizationServer } from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { TokenProvider } from "./TokenProvider.js"
+import { InsecureConfiguration } from "./InsecureConfiguration.js"
 
 export class ClientCredentialsTokenProvider implements TokenProvider {
     constructor(private clientId: string, private clientSecret: string) {
@@ -35,7 +36,8 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
         const issuer = await this.#getIssuer(request)
 
         const discoveryResponse = await oauth.discoveryRequest(issuer, {
-            signal: request.signal
+            signal: request.signal,
+            ...InsecureConfiguration.requestOptions
         })
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
@@ -46,7 +48,8 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
 
         const tokenResponse = await oauth.clientCredentialsGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer, clientRegistration), {scope: "webid"}, {
             DPoP: dpop,
-            signal: request.signal
+            signal: request.signal,
+            ...InsecureConfiguration.requestOptions
         })
 
         const tokenResult = await oauth.processClientCredentialsResponse(authorizationServer, clientRegistration, tokenResponse)
