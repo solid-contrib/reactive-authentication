@@ -1,15 +1,19 @@
 import * as oauth from "oauth4webapi"
 import { GetCodeCallback } from "./GetCodeCallback.js"
 import { TokenProvider } from "./TokenProvider.js"
+import type { TokenProviderOptions } from "./TokenProviderOptions.js"
+import { customFetchOption } from "./customFetchOption.js"
 
 // TODO: Configure properly for insecure localhost only
 const oauthAllowInsecureRequests = true
 
 export class BearerTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
+    readonly #fetch: typeof globalThis.fetch | undefined
 
-    constructor(getCodeCallback: GetCodeCallback) {
+    constructor(getCodeCallback: GetCodeCallback, options?: TokenProviderOptions) {
         this.#getCode = getCodeCallback
+        this.#fetch = options?.fetch
     }
 
     async #getIssuer(request: Request): Promise<URL> {
@@ -43,12 +47,16 @@ export class BearerTokenProvider implements TokenProvider {
     async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
 
-        const discoveryResponse = await oauth.discoveryRequest(issuer, {[oauth.allowInsecureRequests]: oauthAllowInsecureRequests})
+        // Pin the provider's own OIDC requests to the configured fetch (when given)
+        // so they never re-enter an authenticating wrapper patched over the global.
+        const oidcRequestOptions = {[oauth.allowInsecureRequests]: oauthAllowInsecureRequests, ...customFetchOption(this.#fetch)}
+
+        const discoveryResponse = await oauth.discoveryRequest(issuer, oidcRequestOptions)
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
         const callbackUri = await this.#getCallback(request)
 
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]}, {[oauth.allowInsecureRequests]: oauthAllowInsecureRequests})
+        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [callbackUri]}, oidcRequestOptions)
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
@@ -84,7 +92,7 @@ export class BearerTokenProvider implements TokenProvider {
             clientAuth = authenticationMethod(clientSecret)
         }
 
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, codeVerifier, {[oauth.allowInsecureRequests]: oauthAllowInsecureRequests})
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, clientAuth, authorizationCodeParams, callbackUri, codeVerifier, oidcRequestOptions)
 
         // jwt nonce missing in igrant
         // const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: nonce})

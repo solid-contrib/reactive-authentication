@@ -71,6 +71,20 @@ manager.registerGlobally()
 const response = await fetch(requestUri)
 ```
 
+### Pin the providers' own OIDC requests to a pristine `fetch`
+
+The token providers perform their own network requests (discovery, dynamic client registration, the token grant) which default to `globalThis.fetch`. If the application patches the global `fetch` with an authenticating wrapper — `registerGlobally()`, or its own wrapper that single-flights concurrent requests onto one shared authentication attempt — those OIDC requests re-enter the wrapper mid-login. A single-flighting wrapper then awaits the very authentication attempt its request is serving: a circular await that hangs login before the authorization popup/redirect ever opens.
+
+To avoid this, capture the pristine `fetch` before patching and pin the providers to it:
+
+```js
+const pristineFetch = globalThis.fetch.bind(globalThis) // capture BEFORE patching
+
+const provider = new DPoPTokenProvider(callbackUri, getCode, getIssuer, {fetch: pristineFetch})
+const manager = new ReactiveFetchManager([provider])
+manager.registerGlobally()
+```
+
 ## Run the demo
 
 To compile,

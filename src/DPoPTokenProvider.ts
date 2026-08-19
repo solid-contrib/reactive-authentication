@@ -3,16 +3,20 @@ import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { GetIssuerCallback } from "./GetIssuerCallback.js"
+import type { TokenProviderOptions } from "./TokenProviderOptions.js"
+import { customFetchOption } from "./customFetchOption.js"
 
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
     readonly #getIssuer: GetIssuerCallback
+    readonly #fetch: typeof globalThis.fetch | undefined
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback) {
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback, options?: TokenProviderOptions) {
         this.#getCode = getCodeCallback
         this.#callbackUri = callbackUri
         this.#getIssuer = getIssuerCallback
+        this.#fetch = options?.fetch
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -22,10 +26,14 @@ export class DPoPTokenProvider implements TokenProvider {
     async upgrade(request: Request): Promise<Request> {
         const issuer = await this.#getIssuer(request)
 
-        const discoveryResponse = await oauth.discoveryRequest(issuer, {signal: request.signal})
+        // Pin the provider's own OIDC requests to the configured fetch (when given)
+        // so they never re-enter an authenticating wrapper patched over the global.
+        const oidcRequestOptions = {signal: request.signal, ...customFetchOption(this.#fetch)}
+
+        const discoveryResponse = await oauth.discoveryRequest(issuer, oidcRequestOptions)
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal: request.signal})
+        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, oidcRequestOptions)
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
@@ -79,7 +87,7 @@ export class DPoPTokenProvider implements TokenProvider {
             }
         }
 
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal: request.signal})
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, ...oidcRequestOptions})
 
         const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
 
