@@ -23,7 +23,9 @@ export class DPoPTokenProvider implements TokenProvider {
     }
 
     async upgrade(request: Request): Promise<Request> {
+        // TODO: More robust key via callback to support complex caching scenarios
         let tokenData = this.#cache.get(request.url)
+        // TODO: Support actively refreshing the token
         if (tokenData === undefined || isExpired(tokenData)) {
             tokenData = await this.obtainToken(request)
             this.#cache.set(request.url, tokenData)
