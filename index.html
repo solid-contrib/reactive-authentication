@@ -15,7 +15,12 @@
             }
         </script>
         <script type="module">
-            import { DPoPTokenProvider, DynamicRegistrationClientProvider, ReactiveFetchManager } from "./dist/mod.js"
+            import {
+                CachingClientProvider,
+                DPoPTokenProvider,
+                DynamicRegistrationClientProvider,
+                ReactiveFetchManager
+            } from "./dist/mod.js"
             import "./dist/registerElements.js"
 
             /* Reactive fetch infrastructure */
@@ -23,8 +28,9 @@
             const issuerUi = document.querySelector("idp-picker")
             const callbackUri = new URL("/callback.html", location.href).toString()
             const clientProvider = new DynamicRegistrationClientProvider
+            const cachingClientProvider = new CachingClientProvider(clientProvider)
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerUi.getIssuer.bind(issuerUi), clientProvider)
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerUi.getIssuer.bind(issuerUi), cachingClientProvider)
 
             const fetch = new ReactiveFetchManager([dPoPTokenProvider]).fetch
 
