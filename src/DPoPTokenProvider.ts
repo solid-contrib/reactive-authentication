@@ -3,16 +3,19 @@ import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { GetIssuerCallback } from "./GetIssuerCallback.js"
+import { ClientProvider } from "./ClientProvider.js";
 
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
     readonly #getIssuer: GetIssuerCallback
+    readonly #clientProvider: ClientProvider
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback) {
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback, clientProvider: ClientProvider) {
         this.#getCode = getCodeCallback
         this.#callbackUri = callbackUri
         this.#getIssuer = getIssuerCallback
+        this.#clientProvider = clientProvider
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -25,8 +28,7 @@ export class DPoPTokenProvider implements TokenProvider {
         const discoveryResponse = await oauth.discoveryRequest(issuer, {signal: request.signal})
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal: request.signal})
-        const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
+        const clientRegistration = await this.#clientProvider.getClient(authorizationServer, this.#callbackUri, request.signal)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
 
