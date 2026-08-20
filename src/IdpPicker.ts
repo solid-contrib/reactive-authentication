@@ -5,6 +5,7 @@ import type { Quad } from "@rdfjs/types"
 import { ReactiveAuthenticationError } from "./ReactiveAuthenticationError.js"
 import { Mutex } from "./Mutex.js"
 import { IssuerRequestCancelledError } from "./IssuerRequestCancelledError.js"
+import { IssuerProvider } from "./IssuerProvider.js"
 import type { WebIdPicker } from "./WebIdPicker.js"
 
 const onlyOnce = {once: true}
@@ -56,7 +57,7 @@ const html = `
  *
  * See the {@link getIssuer} method for integrating this element into your application.
  */
-export class IdpPicker extends HTMLElement {
+export class IdpPicker extends HTMLElement implements IssuerProvider {
     readonly #mutex = new Mutex
     #dialog!: HTMLDialogElement
     #input!: HTMLInputElement
