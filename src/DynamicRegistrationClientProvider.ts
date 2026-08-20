@@ -1,4 +1,4 @@
-import { ClientProvider } from "./ClientProvider.js"
+import type { ClientProvider } from "./ClientProvider.js"
 import * as oauth from "oauth4webapi"
 
 export class DynamicRegistrationClientProvider implements ClientProvider {

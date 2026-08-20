@@ -1,5 +1,5 @@
-import { ClientProvider } from "./ClientProvider.js"
-import * as oauth from "oauth4webapi"
+import type { ClientProvider } from "./ClientProvider.js"
+import type * as oauth from "oauth4webapi"
 
 export class CachingClientProvider implements ClientProvider {
     readonly #cache = new Map<string, Promise<oauth.Client>> // TODO: Take cache from caller
