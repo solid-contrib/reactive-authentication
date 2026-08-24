@@ -2,20 +2,20 @@ import * as oauth from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
-import type { GetIssuerCallback } from "./GetIssuerCallback.js"
+import type { IssuerProvider } from "./IssuerProvider.js"
 
 type CacheEntry = { created: number, tokenResult: oauth.TokenEndpointResponse, dpopKey: CryptoKeyPair }
 
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
-    readonly #getIssuer: GetIssuerCallback
     readonly #cache = new Map<string, CacheEntry> // TODO: Take cache from caller
+    readonly #issuerProvider: IssuerProvider
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, getIssuerCallback: GetIssuerCallback) {
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, issuerProvider: IssuerProvider) {
         this.#getCode = getCodeCallback
         this.#callbackUri = callbackUri
-        this.#getIssuer = getIssuerCallback
+        this.#issuerProvider = issuerProvider
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -35,12 +35,10 @@ export class DPoPTokenProvider implements TokenProvider {
 
         headers.set("DPoP", await DPoP.generateProof(tokenData.dpopKey, request.url, request.method, undefined, tokenData.tokenResult.access_token))
         headers.set("Authorization", ["DPoP", tokenData.tokenResult.access_token].join(" "))
-
         return new Request(request, {headers})
     }
-
     private async obtainToken(request: Request): Promise<CacheEntry> {
-        const issuer = await this.#getIssuer(request)
+        const issuer = await this.#issuerProvider.getIssuer(request)
 
         const discoveryResponse = await oauth.discoveryRequest(issuer, {signal: request.signal})
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
