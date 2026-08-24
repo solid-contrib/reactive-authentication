@@ -26,11 +26,11 @@
             /* Reactive fetch infrastructure */
             const ui = document.querySelector("authorization-code-flow")
             const issuerUi = document.querySelector("idp-picker")
-            const issuerProvider = new XASProvider(issuerUi.getIssuer.bind(issuerUi))
-            const cachingIssuerProvider = new CachingAuthorizationServerProvider(issuerProvider)
+            const asProvider = new XASProvider(issuerUi.getIssuer.bind(issuerUi))
+            const cachingASProvider = new CachingAuthorizationServerProvider(asProvider)
             const callbackUri = new URL("/callback.html", location.href).toString()
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), cachingIssuerProvider)
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), cachingASProvider)
 
             const fetch = new ReactiveFetchManager([dPoPTokenProvider]).fetch
 
