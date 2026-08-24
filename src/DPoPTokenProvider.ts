@@ -4,9 +4,12 @@ import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 
+type CacheEntry = { created: number, tokenResult: oauth.TokenEndpointResponse, dpopKey: CryptoKeyPair }
+
 export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
+    readonly #cache = new Map<string, CacheEntry> // TODO: Take cache from caller
     readonly #asProvider: AuthorizationServerProvider
 
     constructor(callbackUri: string, getCodeCallback: GetCodeCallback, asProvider: AuthorizationServerProvider) {
@@ -20,6 +23,21 @@ export class DPoPTokenProvider implements TokenProvider {
     }
 
     async upgrade(request: Request): Promise<Request> {
+        // TODO: More robust key via callback to support complex caching scenarios
+        let tokenData = this.#cache.get(request.url)
+        // TODO: Support actively refreshing the token
+        if (tokenData === undefined || isExpired(tokenData)) {
+            tokenData = await this.obtainToken(request)
+            this.#cache.set(request.url, tokenData)
+        }
+
+        const headers = new Headers(request.headers)
+
+        headers.set("DPoP", await DPoP.generateProof(tokenData.dpopKey, request.url, request.method, undefined, tokenData.tokenResult.access_token))
+        headers.set("Authorization", ["DPoP", tokenData.tokenResult.access_token].join(" "))
+        return new Request(request, {headers})
+    }
+    private async obtainToken(request: Request): Promise<CacheEntry> {
         const authorizationServer = await this.#asProvider.getAuthorizationServer(request)
 
         const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal: request.signal})
@@ -80,12 +98,7 @@ export class DPoPTokenProvider implements TokenProvider {
 
         const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
 
-        const headers = new Headers(request.headers)
-
-        headers.set("DPoP", await DPoP.generateProof(dpopKey, request.url, request.method, undefined, tokenResult.access_token))
-        headers.set("Authorization", ["DPoP", tokenResult.access_token].join(" "))
-
-        return new Request(request, {headers})
+        return {created: Date.now(), tokenResult, dpopKey}
     }
 
     private getClientAuth(issuer: string, client: oauth.OmitSymbolProperties<oauth.Client>): oauth.ClientAuth {
@@ -140,4 +153,10 @@ function clientSecretBasicFor(issuer: string): (clientSecret: string) => oauth.C
     }
 
     return oauth.ClientSecretBasic
+}
+
+function isExpired(tokenData: CacheEntry) {
+    // TODO: Add some headroom (expire a bit before limit)
+    // TODO: What to do when `expires_in` is Missing? (optional in https://datatracker.ietf.org/doc/html/rfc6749#section-4.2.2)
+    return Date.now() - tokenData.created > tokenData.tokenResult.expires_in! * 1_000;
 }

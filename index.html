@@ -26,7 +26,8 @@
             /* Reactive fetch infrastructure */
             const ui = document.querySelector("authorization-code-flow")
             const issuerUi = document.querySelector("idp-picker")
-            const asProvider = new XASProvider(issuerUi.getIssuer.bind(issuerUi))
+            const issuerProvider = new CachingIssuerProvider(issuerUi)
+            const asProvider = new XASProvider(issuerUi.getIssuer.bind(issuerProvider))
             const cachingASProvider = new CachingAuthorizationServerProvider(asProvider)
             const callbackUri = new URL("/callback.html", location.href).toString()
 
