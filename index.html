@@ -15,16 +15,24 @@
             }
         </script>
         <script type="module">
-            import { CachingIssuerProvider, DPoPTokenProvider, ReactiveFetchManager } from "./dist/mod.js"
+            import {
+                CachingAuthorizationServerProvider,
+                CachingIssuerProvider,
+                DPoPTokenProvider,
+                ReactiveFetchManager,
+                XASProvider
+            } from "./dist/mod.js"
             import "./dist/registerElements.js"
 
             /* Reactive fetch infrastructure */
             const ui = document.querySelector("authorization-code-flow")
             const issuerUi = document.querySelector("idp-picker")
             const issuerProvider = new CachingIssuerProvider(issuerUi)
+            const asProvider = new XASProvider(issuerProvider)
+            const cachingASProvider = new CachingAuthorizationServerProvider(asProvider)
             const callbackUri = new URL("/callback.html", location.href).toString()
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerProvider)
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), cachingASProvider)
 
             const fetch = new ReactiveFetchManager([dPoPTokenProvider]).fetch
 

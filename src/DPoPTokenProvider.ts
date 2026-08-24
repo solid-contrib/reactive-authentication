@@ -2,7 +2,7 @@ import * as oauth from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
-import type { IssuerProvider } from "./IssuerProvider.js"
+import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 
 type CacheEntry = { created: number, tokenResult: oauth.TokenEndpointResponse, dpopKey: CryptoKeyPair }
 
@@ -10,12 +10,12 @@ export class DPoPTokenProvider implements TokenProvider {
     readonly #getCode: GetCodeCallback
     readonly #callbackUri: string
     readonly #cache = new Map<string, CacheEntry> // TODO: Take cache from caller
-    readonly #issuerProvider: IssuerProvider
+    readonly #asProvider: AuthorizationServerProvider
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, issuerProvider: IssuerProvider) {
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, asProvider: AuthorizationServerProvider) {
         this.#getCode = getCodeCallback
         this.#callbackUri = callbackUri
-        this.#issuerProvider = issuerProvider
+        this.#asProvider = asProvider
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -38,10 +38,7 @@ export class DPoPTokenProvider implements TokenProvider {
         return new Request(request, {headers})
     }
     private async obtainToken(request: Request): Promise<CacheEntry> {
-        const issuer = await this.#issuerProvider.getIssuer(request)
-
-        const discoveryResponse = await oauth.discoveryRequest(issuer, {signal: request.signal})
-        const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
+        const authorizationServer = await this.#asProvider.getAuthorizationServer(request)
 
         const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal: request.signal})
         const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
