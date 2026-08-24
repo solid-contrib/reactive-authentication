@@ -1,17 +1,16 @@
-import type { GetIssuerCallback } from "./GetIssuerCallback.js"
-import type { AuthorizationServer } from "oauth4webapi"
+import type { IssuerProvider } from "./IssuerProvider.js"
 import * as oauth from "oauth4webapi"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 
 export class XASProvider implements AuthorizationServerProvider {
-    readonly #getIssuer: GetIssuerCallback
+    readonly #issuerProvider: IssuerProvider
 
-    constructor(getIssuerCallback: GetIssuerCallback) {
-        this.#getIssuer = getIssuerCallback
+    constructor(issuerProvider: IssuerProvider) {
+        this.#issuerProvider = issuerProvider
     }
 
-    async getAuthorizationServer(request: Request): Promise<AuthorizationServer> {
-        const issuer = await this.#getIssuer(request)
+    async getAuthorizationServer(request: Request): Promise<oauth.AuthorizationServer> {
+        const issuer = await this.#issuerProvider.getIssuer(request)
         const discoveryResponse = await oauth.discoveryRequest(issuer, {signal: request.signal})
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 

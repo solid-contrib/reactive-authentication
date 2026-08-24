@@ -17,6 +17,7 @@
         <script type="module">
             import {
                 CachingAuthorizationServerProvider,
+                CachingIssuerProvider,
                 DPoPTokenProvider,
                 ReactiveFetchManager,
                 XASProvider
@@ -27,7 +28,7 @@
             const ui = document.querySelector("authorization-code-flow")
             const issuerUi = document.querySelector("idp-picker")
             const issuerProvider = new CachingIssuerProvider(issuerUi)
-            const asProvider = new XASProvider(issuerUi.getIssuer.bind(issuerProvider))
+            const asProvider = new XASProvider(issuerProvider)
             const cachingASProvider = new CachingAuthorizationServerProvider(asProvider)
             const callbackUri = new URL("/callback.html", location.href).toString()
 
