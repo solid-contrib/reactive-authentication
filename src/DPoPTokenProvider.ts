@@ -3,6 +3,7 @@ import * as DPoP from "dpop"
 import type { GetCodeCallback } from "./GetCodeCallback.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
+import { ClientProvider } from "./ClientProvider.js"
 
 type CacheEntry = { created: number, tokenResult: oauth.TokenEndpointResponse, dpopKey: CryptoKeyPair }
 
@@ -11,11 +12,13 @@ export class DPoPTokenProvider implements TokenProvider {
     readonly #callbackUri: string
     readonly #cache = new Map<string, CacheEntry> // TODO: Take cache from caller
     readonly #asProvider: AuthorizationServerProvider
+    readonly #clientProvider: ClientProvider
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, asProvider: AuthorizationServerProvider) {
+    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
         this.#getCode = getCodeCallback
         this.#callbackUri = callbackUri
         this.#asProvider = asProvider
+        this.#clientProvider = clientProvider
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -40,8 +43,7 @@ export class DPoPTokenProvider implements TokenProvider {
     private async obtainToken(request: Request): Promise<CacheEntry> {
         const authorizationServer = await this.#asProvider.getAuthorizationServer(request)
 
-        const registrationResponse = await oauth.dynamicClientRegistrationRequest(authorizationServer, {redirect_uris: [this.#callbackUri]}, {signal: request.signal})
-        const clientRegistration = await oauth.processDynamicClientRegistrationResponse(registrationResponse)
+        const clientRegistration = await this.#clientProvider.getClient(authorizationServer, this.#callbackUri, request.signal)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
 
