@@ -28,8 +28,8 @@ async function onFetch(e: FetchEvent): Promise<void> {
 }
 
 function upgrade(request: Request, client: Client): Promise<Response> {
-    const dPoPTokenProvider = new DPoPTokenProvider(undefined!, postEventAndWait.bind(undefined, client), undefined!, undefined!) // TODO: Callback, getIssuer, getClient
-    const bearerProvider = new BearerTokenProvider(postEventAndWait.bind(undefined, client))
+    const dPoPTokenProvider = new DPoPTokenProvider(undefined!, undefined!, undefined!, undefined!) // TODO: Callback, getIssuer, getClient
+    const bearerProvider = new BearerTokenProvider(undefined!)
 
     return new ReactiveAuthenticationClient(self.fetch, [bearerProvider, dPoPTokenProvider]).fetch(request)
 }
