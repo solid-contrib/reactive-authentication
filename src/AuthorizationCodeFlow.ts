@@ -195,7 +195,6 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
             this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
             signal.removeEventListener("abort", onAbort)
             this.#switchModal.close()
-            this.#authorizationWindow?.close()
             respondWithCode(message.data)
         }
 
@@ -217,6 +216,10 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
         }
 
         return await responseFromPopup
+    }
+
+    cleanup(): void {
+        this.#authorizationWindow?.close()
     }
 
     #onSubmit(e: SubmitEvent) {
