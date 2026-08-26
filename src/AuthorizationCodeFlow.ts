@@ -176,7 +176,7 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
      * </script>
      * ```
      */
-    async getCode(authorizationUri: URL, signal: AbortSignal): Promise<string> {
+    async getCode(authorizationUri: URL, signal: AbortSignal): Promise<Disposable & { readonly value: string }> {
         // One flow at a time, fellas
         using _ = await this.#mutex.acquire()
 
@@ -215,7 +215,7 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
             this.#interactionNeeded()
         }
 
-        return await responseFromPopup
+        return new ValueWithCleanup(await responseFromPopup, () => this.#authorizationWindow?.close())
     }
 
     cleanup(): void {
@@ -254,5 +254,14 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
         this.#switchModal.close()
         this.#authorizationWindow?.close()
         this.#cancelCodeRequest?.call(undefined, new CodeRequestCancelledError(this.#authorizationUri!))
+    }
+}
+
+class ValueWithCleanup implements Disposable {
+    constructor(public readonly value: string, private cleanup: () => void) {
+    }
+
+    [Symbol.dispose](): void {
+        this.cleanup()
     }
 }

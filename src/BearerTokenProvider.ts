@@ -75,8 +75,8 @@ export class BearerTokenProvider implements TokenProvider {
         //     authorizationUrl.searchParams.set("nonce", nonce)
         // }
 
-        const authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
-        const authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse))
+        using authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
+        const authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse.value))
 
         let clientAuth = oauth.None()
         if (clientRegistration.token_endpoint_auth_method === "client_secret_basic") {

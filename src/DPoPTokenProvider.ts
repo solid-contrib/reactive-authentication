@@ -73,11 +73,11 @@ export class DPoPTokenProvider implements TokenProvider {
             }
         }
 
-        const authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
+        using authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
 
         let authorizationCodeParams
         try {
-            authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
+            authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse.value), state)
         } catch (e) {
             if (
                 // Proper way
@@ -89,14 +89,13 @@ export class DPoPTokenProvider implements TokenProvider {
                 console.debug("Authorization server requires user interaction, retrying without prompt")
 
                 authorizationUrl.searchParams.delete("prompt")
-                const authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
-                authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
+                using authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
+                authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse.value), state)
             } else {
                 throw e
             }
         }
 
-        this.#codeProvider.cleanup()
         const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal: request.signal})
 
         const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
