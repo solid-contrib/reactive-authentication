@@ -1,15 +1,15 @@
 import * as oauth from "oauth4webapi"
-import { GetCodeCallback } from "./GetCodeCallback.js"
+import { CodeProvider } from "./CodeProvider.js"
 import { TokenProvider } from "./TokenProvider.js"
 
 // TODO: Configure properly for insecure localhost only
 const oauthAllowInsecureRequests = true
 
 export class BearerTokenProvider implements TokenProvider {
-    readonly #getCode: GetCodeCallback
+    readonly #codeProvider: CodeProvider
 
-    constructor(getCodeCallback: GetCodeCallback) {
-        this.#getCode = getCodeCallback
+    constructor(codeProvider: CodeProvider) {
+        this.#codeProvider = codeProvider
     }
 
     async #getIssuer(request: Request): Promise<URL> {
@@ -75,7 +75,7 @@ export class BearerTokenProvider implements TokenProvider {
         //     authorizationUrl.searchParams.set("nonce", nonce)
         // }
 
-        const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
+        const authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
         const authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse))
 
         let clientAuth = oauth.None()

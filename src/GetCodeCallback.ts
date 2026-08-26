@@ -1,1 +1,0 @@
-export type GetCodeCallback = (authorizationUri: URL, signal: AbortSignal) => Promise<string>

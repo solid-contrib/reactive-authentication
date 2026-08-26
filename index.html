@@ -36,7 +36,7 @@
             const clientProvider = new DynamicRegistrationClientProvider
             const cachingClientProvider = new CachingClientProvider(clientProvider)
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), cachingASProvider, cachingClientProvider)
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui, cachingASProvider, cachingClientProvider)
 
             const fetch = new ReactiveFetchManager([dPoPTokenProvider]).fetch
 

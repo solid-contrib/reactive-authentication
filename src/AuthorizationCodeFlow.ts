@@ -1,5 +1,6 @@
 import { Mutex } from "./Mutex.js"
 import { CodeRequestCancelledError } from "./CodeRequestCancelledError.js"
+import type { CodeProvider } from "./CodeProvider.js"
 
 const authorizationWindowName = "oidcAuthentication"
 const onlyOnce = {once: true}
@@ -119,7 +120,7 @@ const html = `
  * </style>
  * ```
  */
-export class AuthorizationCodeFlow extends HTMLElement {
+export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
     readonly #mutex = new Mutex
     #newModal!: HTMLDialogElement
     #switchModal!: HTMLDialogElement
@@ -194,7 +195,6 @@ export class AuthorizationCodeFlow extends HTMLElement {
             this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
             signal.removeEventListener("abort", onAbort)
             this.#switchModal.close()
-            this.#authorizationWindow?.close()
             respondWithCode(message.data)
         }
 
@@ -216,6 +216,10 @@ export class AuthorizationCodeFlow extends HTMLElement {
         }
 
         return await responseFromPopup
+    }
+
+    cleanup(): void {
+        this.#authorizationWindow?.close()
     }
 
     #onSubmit(e: SubmitEvent) {

@@ -1,6 +1,6 @@
 import * as oauth from "oauth4webapi"
 import * as DPoP from "dpop"
-import type { GetCodeCallback } from "./GetCodeCallback.js"
+import type { CodeProvider } from "./CodeProvider.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 import { ClientProvider } from "./ClientProvider.js"
@@ -8,14 +8,14 @@ import { ClientProvider } from "./ClientProvider.js"
 type CacheEntry = { created: number, tokenResult: oauth.TokenEndpointResponse, dpopKey: CryptoKeyPair }
 
 export class DPoPTokenProvider implements TokenProvider {
-    readonly #getCode: GetCodeCallback
+    readonly #codeProvider: CodeProvider
     readonly #callbackUri: string
     readonly #cache = new Map<string, CacheEntry> // TODO: Take cache from caller
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
 
-    constructor(callbackUri: string, getCodeCallback: GetCodeCallback, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
-        this.#getCode = getCodeCallback
+    constructor(callbackUri: string, codeProvider: CodeProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
+        this.#codeProvider = codeProvider
         this.#callbackUri = callbackUri
         this.#asProvider = asProvider
         this.#clientProvider = clientProvider
@@ -73,7 +73,7 @@ export class DPoPTokenProvider implements TokenProvider {
             }
         }
 
-        const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
+        const authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
 
         let authorizationCodeParams
         try {
@@ -89,13 +89,14 @@ export class DPoPTokenProvider implements TokenProvider {
                 console.debug("Authorization server requires user interaction, retrying without prompt")
 
                 authorizationUrl.searchParams.delete("prompt")
-                const authorizationCodeResponse = await this.#getCode(authorizationUrl, request.signal)
+                const authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
                 authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse), state)
             } else {
                 throw e
             }
         }
 
+        this.#codeProvider.cleanup()
         const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal: request.signal})
 
         const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
