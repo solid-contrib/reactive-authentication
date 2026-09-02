@@ -1,12 +1,8 @@
 {
+  "token_endpoint_auth_method": "none",
   "client_id": "http://localhost:8080/id.jsonld",
   "redirect_uris": [
     "http://localhost:8080/callback.html"
-  ],
-  "scope": "openid webid",
-  "grant_types": [
-    "authorization_code",
-    "refresh_token"
   ],
   "response_types": [
     "code"

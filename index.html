@@ -19,6 +19,7 @@
                 CachingAuthorizationServerProvider,
                 CachingClientProvider,
                 CachingIssuerProvider,
+                // ClientIdClientProvider,
                 DPoPTokenProvider,
                 DynamicRegistrationClientProvider,
                 ReactiveFetchManager,
@@ -34,6 +35,7 @@
             const cachingASProvider = new CachingAuthorizationServerProvider(asProvider)
             const callbackUri = new URL("/callback.html", location.href).toString()
             const clientProvider = new DynamicRegistrationClientProvider
+            // const clientProvider = new ClientIdClientProvider(new URL("./id.jsonld", location.href))
             const cachingClientProvider = new CachingClientProvider(clientProvider)
 
             const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui, cachingASProvider, cachingClientProvider)
