@@ -1,5 +1,4 @@
 export interface CodeProvider {
-    getCode(authorizationUri: URL, signal: AbortSignal): Promise<string>
-
-    cleanup(): void
+    // TODO: Document dispose cleaning up e.g. closing window
+    getCode(authorizationUri: URL, signal: AbortSignal): Promise<Disposable & { get value(): string }>
 }
