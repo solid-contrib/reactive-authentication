@@ -1,10 +1,10 @@
-import type { GetCodeCallback } from "./GetCodeCallback.js"
+import type { CodeProvider } from "./CodeProvider.js"
 
 export class ReactiveFetchWorkerManager {
-    readonly #getCode: GetCodeCallback
+    readonly #codeProvider: CodeProvider
 
-    constructor(getCodeCallback: GetCodeCallback) {
-        this.#getCode = getCodeCallback
+    constructor(codeProvider: CodeProvider) {
+        this.#codeProvider = codeProvider
     }
 
     async register() {
@@ -15,6 +15,6 @@ export class ReactiveFetchWorkerManager {
     }
 
     async #onMessage(e: MessageEvent<string>) {
-        e.ports[0]?.postMessage(await this.#getCode(new URL(e.data), null!)) // TODO: Signal?
+        e.ports[0]?.postMessage(await this.#codeProvider.getCode(new URL(e.data), null!)) // TODO: Signal?
     }
 }

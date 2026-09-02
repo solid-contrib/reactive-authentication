@@ -1,5 +1,12 @@
+import { SimpleDataset } from "./SimpleDataset.js"
+import { NamedNodeAs, OptionalFrom, TermWrapper } from "@rdfjs/wrapper"
+import { DataFactory, Parser } from "n3"
+import type { Quad } from "@rdfjs/types"
+import { ReactiveAuthenticationError } from "./ReactiveAuthenticationError.js"
 import { Mutex } from "./Mutex.js"
 import { IssuerRequestCancelledError } from "./IssuerRequestCancelledError.js"
+import { IssuerProvider } from "./IssuerProvider.js"
+import type { WebIdPicker } from "./WebIdPicker.js"
 
 const onlyOnce = {once: true}
 const html = `
@@ -30,10 +37,14 @@ const html = `
             <button>
                 <slot name="ok-button">OK</slot>
             </button>
-            <button type="button">
+            <button type="button" id="webid" hidden disabled accesskey="w">
+                <slot name="webid-button">Use <u>W</u>ebID</slot>
+            </button>
+            <button type="button" id="cancel">
                 <slot name="cancel-button">Cancel</slot>
             </button>
         </form>
+        <slot name="webid-picker"></slot>
     </fieldset>
 </dialog>
 `
@@ -46,11 +57,14 @@ const html = `
  *
  * See the {@link getIssuer} method for integrating this element into your application.
  */
-export class IdpPicker extends HTMLElement {
+export class IdpPicker extends HTMLElement implements IssuerProvider {
     readonly #mutex = new Mutex
     #dialog!: HTMLDialogElement
     #input!: HTMLInputElement
     #code!: HTMLElement
+    #webIdButton!: HTMLButtonElement
+    #webIdPicker: WebIdPicker | null = null
+    #request?: Request
 
     /** @ignore */
     connectedCallback() {
@@ -63,18 +77,25 @@ export class IdpPicker extends HTMLElement {
         this.#dialog = shadow.querySelector("dialog")!
         this.#input = shadow.querySelector("input")!
         this.#code = shadow.querySelector("code")!
+        this.#webIdPicker = this.querySelector(":scope > webid-picker[slot='webid-picker']")
+        this.#webIdButton = shadow.querySelector<HTMLButtonElement>("#webid")!
 
         shadow.querySelector("form")!.addEventListener("submit", e => this.#dialog.returnValue = this.#input.value)
-        shadow.querySelector("button[type = 'button']")!.addEventListener("click", () => this.#dialog.close())
+        shadow.querySelector("#cancel")!.addEventListener("click", () => this.#dialog.close())
+        this.#webIdButton.addEventListener("click", this.#useWebId.bind(this))
 
-        for (const option of this.querySelectorAll("option")) {
+        // Options cannot be slotted into a datalist
+        for (const option of this.querySelectorAll(":scope > option")) {
             shadow.querySelector("datalist")!.appendChild(option.cloneNode())
         }
+
+        this.#webIdButton.disabled = this.#webIdButton.hidden = this.#webIdPicker === null
     }
 
     async getIssuer(request: Request): Promise<URL> {
         using _ = await this.#mutex.acquire()
 
+        this.#request = request
         this.#input.value = ""
         this.#code.innerText = request.url
         this.#dialog.returnValue = ""
@@ -101,4 +122,46 @@ export class IdpPicker extends HTMLElement {
 
         return await promise
     }
+
+    async #useWebId() {
+        this.#webIdButton.disabled = true
+        try {
+            const webid = await this.#webIdPicker!.getWebId(this.#request!)
+            const issuer = await issuerFromWebId(webid, this.#request!.signal)
+            this.#input.value = issuer.href
+        } finally {
+            this.#webIdButton.disabled = false
+            this.#input.focus()
+        }
+    }
+}
+
+class WebIdAgent extends TermWrapper {
+    get oidcIssuer(): URL | undefined {
+        return OptionalFrom.subjectPredicate(this, "http://www.w3.org/ns/solid/terms#oidcIssuer", NamedNodeAs.url)
+    }
+}
+
+async function issuerFromWebId(webId: URL, signal: AbortSignal): Promise<URL> {
+    const response = await fetch(webId, {headers: {accept: "text/turtle"}, signal})
+    if (!response.ok) {
+        throw new ReactiveAuthenticationError("WebID profile could not be retrieved")
+    }
+
+    const text = await response.text()
+    const parser = new Parser({baseIRI: response.url || webId.href}) // Base is from response if redirected, from WebID otherwise
+    let quads: Quad[]
+    try {
+        quads = parser.parse(text)
+    } catch (error) {
+        throw new ReactiveAuthenticationError("WebID profile could not be parsed", error)
+    }
+
+    const agent = new WebIdAgent(webId.href, new SimpleDataset(quads), DataFactory)
+    const issuer = agent.oidcIssuer
+    if (issuer === undefined) {
+        throw new ReactiveAuthenticationError("WebID profile lacks OIDC issuer")
+    }
+
+    return issuer
 }

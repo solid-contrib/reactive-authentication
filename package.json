@@ -1,6 +1,6 @@
 {
   "name": "@solid/reactive-authentication",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "author": "Samu Lang (https://github.com/langsamu)",
   "contributors": [
     "Matthieu Bosquet (https://github.com/matthieubosquet)",
@@ -31,9 +31,13 @@
   "license": "MIT",
   "dependencies": {
     "oauth4webapi": "^3",
-    "dpop": "^2"
+    "dpop": "^2",
+    "@rdfjs/wrapper": "^0.34",
+    "n3": "^2"
   },
   "devDependencies": {
+    "@rdfjs/types": "^2",
+    "@types/n3": "^1",
     "typedoc": "^0.28.18",
     "typedoc-plugin-mdn-links": "^5.1.1",
     "typescript": "^6"

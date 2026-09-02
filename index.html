@@ -8,13 +8,37 @@
             {
               "imports": {
                 "oauth4webapi": "https://cdn.jsdelivr.net/npm/oauth4webapi@3.8.6/+esm",
-                "dpop": "https://cdn.jsdelivr.net/npm/dpop@2.1.1/+esm"
+                "dpop": "https://cdn.jsdelivr.net/npm/dpop@2.1.1/+esm",
+                "n3": "https://esm.sh/n3@2.0.3",
+                "@rdfjs/wrapper": "https://cdn.jsdelivr.net/npm/@rdfjs/wrapper@0.34.0/+esm"
               }
             }
         </script>
         <script type="module">
-            import { DPoPTokenProvider, clientIdClientCallback, ReactiveFetchManager } from "./dist/mod.js"
+            import {
+                CachingAuthorizationServerProvider,
+                CachingClientProvider,
+                CachingIssuerProvider,
+                DPoPTokenProvider,
+                DynamicRegistrationClientProvider,
+                ReactiveFetchManager,
+                XASProvider
+            } from "./dist/mod.js"
             import "./dist/registerElements.js"
+
+            /* Reactive fetch infrastructure */
+            const ui = document.querySelector("authorization-code-flow")
+            const issuerUi = document.querySelector("idp-picker")
+            const issuerProvider = new CachingIssuerProvider(issuerUi)
+            const asProvider = new XASProvider(issuerProvider)
+            const cachingASProvider = new CachingAuthorizationServerProvider(asProvider)
+            const callbackUri = new URL("/callback.html", location.href).toString()
+            const clientProvider = new DynamicRegistrationClientProvider
+            const cachingClientProvider = new CachingClientProvider(clientProvider)
+
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui, cachingASProvider, cachingClientProvider)
+
+            const fetch = new ReactiveFetchManager([dPoPTokenProvider]).fetch
 
             /* Page functionality: Buttons */
             document.addEventListener("DOMContentLoaded", () =>
@@ -27,7 +51,8 @@
                 console.log(`Start fetch to ${uri}`)
 
                 try {
-                    const response = await fetch(uri, {signal: AbortSignal.timeout(5000)})
+                    // const response = await fetch(uri, {signal: AbortSignal.timeout(5000)})
+                    const response = await fetch(uri)
                     console.log(`Fetch succeeded to ${uri}`, response)
                 } catch (e) {
                     console.error(`Fetch failed to ${uri}`, e)
@@ -46,26 +71,6 @@
                     // f("http://localhost:3000/a/profile/"),
                 ])
             })
-
-            /* Reactive fetch infrastructure */
-            // const mapping = [
-            //     {storage: /.solidcommunity.net/, idp: "https://solidcommunity.net"},
-            //     {storage: /datapod.igrant.io/, idp: "https://datapod.igrant.io"},
-            //     {storage: /.solidweb.app/, idp: "https://solidweb.app"},
-            //     {storage: /storage.inrupt.com/, idp: "https://login.inrupt.com"},
-            //     {storage: /teamid.live/, idp: "https://teamid.live"},
-            //     {storage: /.solidweb.org/, idp: "https://solidweb.org"},
-            //     {storage: /.privatedatapod.com/, idp: "https://privatedatapod.com"},
-            //     {storage: /localhost:3000/, idp: "http://localhost:3000"},
-            // ]
-
-            const ui = document.querySelector("authorization-code-flow")
-            const issuerUi = document.querySelector("idp-picker")
-            const callbackUri = new URL("/callback.html", location.href).toString()
-
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui.getCode.bind(ui), issuerUi.getIssuer.bind(issuerUi), clientIdClientCallback(new URL("./id.jsonld", location.href)))
-
-            new ReactiveFetchManager([dPoPTokenProvider]).registerGlobally()
         </script>
     </head>
     <body>
@@ -77,6 +82,7 @@
         <button class="fetch" value="https://teamid.live/langsamu/settings/">teamid.live (CSS)</button>
         <button class="fetch" value="https://langsamu.solidweb.org/settings/">solidweb.org (NSS 6.0.0)</button>
         <button class="fetch" value="https://langsamu.privatedatapod.com/settings/">privatedatapod (CSS)</button>
+        <button class="fetch" value="https://solidweb.me/langsamu/profile/">solidweb.me (CSS)</button>
         <button class="fetch" value="http://localhost:3000/a/profile/">localhost (CSS)</button>
         <authorization-code-flow>
             <span slot="new-text">USER INTERACTION NEEDED TO LAUNCH AUTHORIZATION CODE FLOW IN NEW WINDOW.</span>
@@ -94,7 +100,17 @@
             <option value="https://teamid.live"></option>
             <option value="https://solidweb.org"></option>
             <option value="https://privatedatapod.com"></option>
+            <option value="https://solidweb.me/"></option>
             <option value="http://localhost:3000"></option>
+            <webid-picker slot="webid-picker">
+                <option value="https://YOUR_USERNAME.solidcommunity.net/profile/card#me"></option>
+                <option value="https://id.inrupt.com/YOUR_USERNAME"></option>
+                <option value="https://YOUR_USERNAME.datapod.igrant.io/profile/card#me"></option>
+                <option value="https://YOUR_USERNAME.solidweb.app/profile/card.jsonld#me"></option>
+                <option value="https://teamid.live/YOUR_USERNAME/profile/card#me"></option>
+                <option value="https://YOUR_USERNAME.solidweb.org/profile/card#me"></option>
+                <option value="https://solidweb.me/YOUR_USERNAME/profile/card#me"></option>
+            </webid-picker>
         </idp-picker>
     </body>
 </html>

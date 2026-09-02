@@ -1,5 +1,6 @@
 import { Mutex } from "./Mutex.js"
 import { CodeRequestCancelledError } from "./CodeRequestCancelledError.js"
+import type { CodeProvider } from "./CodeProvider.js"
 
 const authorizationWindowName = "oidcAuthentication"
 const onlyOnce = {once: true}
@@ -119,7 +120,7 @@ const html = `
  * </style>
  * ```
  */
-export class AuthorizationCodeFlow extends HTMLElement {
+export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
     readonly #mutex = new Mutex
     #newModal!: HTMLDialogElement
     #switchModal!: HTMLDialogElement
@@ -175,7 +176,7 @@ export class AuthorizationCodeFlow extends HTMLElement {
      * </script>
      * ```
      */
-    async getCode(authorizationUri: URL, signal: AbortSignal): Promise<string> {
+    async getCode(authorizationUri: URL, signal: AbortSignal): Promise<Disposable & { readonly value: string }> {
         // One flow at a time, fellas
         using _ = await this.#mutex.acquire()
 
@@ -194,7 +195,6 @@ export class AuthorizationCodeFlow extends HTMLElement {
             this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
             signal.removeEventListener("abort", onAbort)
             this.#switchModal.close()
-            this.#authorizationWindow?.close()
             respondWithCode(message.data)
         }
 
@@ -215,7 +215,11 @@ export class AuthorizationCodeFlow extends HTMLElement {
             this.#interactionNeeded()
         }
 
-        return await responseFromPopup
+        return new ValueWithCleanup(await responseFromPopup, () => this.#authorizationWindow?.close())
+    }
+
+    cleanup(): void {
+        this.#authorizationWindow?.close()
     }
 
     #onSubmit(e: SubmitEvent) {
@@ -250,5 +254,14 @@ export class AuthorizationCodeFlow extends HTMLElement {
         this.#switchModal.close()
         this.#authorizationWindow?.close()
         this.#cancelCodeRequest?.call(undefined, new CodeRequestCancelledError(this.#authorizationUri!))
+    }
+}
+
+class ValueWithCleanup implements Disposable {
+    constructor(public readonly value: string, private cleanup: () => void) {
+    }
+
+    [Symbol.dispose](): void {
+        this.cleanup()
     }
 }
