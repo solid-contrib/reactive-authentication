@@ -1,0 +1,11 @@
+{
+  "token_endpoint_auth_method": "none",
+  "client_id": "http://localhost:8080/id.jsonld",
+  "redirect_uris": [
+    "http://localhost:8080/callback.html"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "@context": "https://www.w3.org/ns/solid/oidc-context.jsonld"
+}
