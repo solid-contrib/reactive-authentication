@@ -62,15 +62,6 @@ The `ReactiveFetchManager` provides a `fetch` function that can be used to reque
 const response = await manager.fetch(requestUri)
 ```
 
-### Patch global `fetch`
-
-The `ReactiveFetchManager` can monkey-patch global `fetch` to achieve the same effect:
-
-```js
-manager.registerGlobally()
-const response = await fetch(requestUri)
-```
-
 ## Run the demo
 
 To compile,
