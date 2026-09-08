@@ -4,6 +4,7 @@ import type { CodeProvider } from "./CodeProvider.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 import { ClientProvider } from "./ClientProvider.js"
+import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
 
 type CacheEntry = { created: number, tokenResult: oauth.TokenEndpointResponse, dpopKey: CryptoKeyPair }
 
@@ -54,11 +55,16 @@ export class DPoPTokenProvider implements TokenProvider {
         const nonce = oauth.generateRandomNonce()
         const state = oauth.generateRandomState()
 
+        const scopes = ["openid", "webid"]
+        if (supportsOfflineAccess(authorizationServer)) {
+            scopes.push("offline_access")
+        }
+
         const authorizationUrl = new URL(authorizationServer.authorization_endpoint!)
         authorizationUrl.searchParams.set("client_id", clientRegistration.client_id)
         authorizationUrl.searchParams.set("redirect_uri", registeredRedirectUri!)
         authorizationUrl.searchParams.set("response_type", registeredResponseType!)
-        authorizationUrl.searchParams.set("scope", "openid webid")
+        authorizationUrl.searchParams.set("scope", scopes.join(" "))
         authorizationUrl.searchParams.set("prompt", "none")
         authorizationUrl.searchParams.set("state", state)
         authorizationUrl.searchParams.set("nonce", nonce)
