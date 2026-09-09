@@ -31,20 +31,29 @@ export class DPoPTokenProvider implements TokenProvider {
     }
 
     async upgrade(request: Request): Promise<Request> {
+        const {dpopKey, tokenResult: {access_token}} = await this.getCachedToken(request)
+
+        const headers = new Headers(request.headers)
+
+        headers.set("DPoP", await DPoP.generateProof(dpopKey, request.url, request.method, undefined, access_token))
+        headers.set("Authorization", ["DPoP", access_token].join(" "))
+
+        return new Request(request, {headers})
+    }
+
+    private async getCachedToken(request: Request): Promise<CacheEntry> {
         // TODO: More robust key via callback to support complex caching scenarios
         let tokenData = this.#cache.get(request.url)
+
         // TODO: Support actively refreshing the token
         if (tokenData === undefined || isExpired(tokenData)) {
             tokenData = await this.obtainToken(request)
             this.#cache.set(request.url, tokenData)
         }
 
-        const headers = new Headers(request.headers)
-
-        headers.set("DPoP", await DPoP.generateProof(tokenData.dpopKey, request.url, request.method, undefined, tokenData.tokenResult.access_token))
-        headers.set("Authorization", ["DPoP", tokenData.tokenResult.access_token].join(" "))
-        return new Request(request, {headers})
+        return tokenData;
     }
+
     private async obtainToken(request: Request): Promise<CacheEntry> {
         const authorizationServer = await this.#asProvider.getAuthorizationServer(request)
 
