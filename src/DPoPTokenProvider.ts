@@ -6,7 +6,11 @@ import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.
 import { ClientProvider } from "./ClientProvider.js"
 import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
 
-type CacheEntry = { created: number, tokenResult: oauth.TokenEndpointResponse, dpopKey: CryptoKeyPair }
+type CacheEntry = {
+    created: number,
+    tokenResult: oauth.TokenEndpointResponse,
+    dpopKey: CryptoKeyPair,
+}
 
 export class DPoPTokenProvider implements TokenProvider {
     readonly #codeProvider: CodeProvider
