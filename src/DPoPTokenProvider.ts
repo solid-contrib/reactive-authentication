@@ -11,6 +11,7 @@ type CacheEntry = {
     tokenResult: oauth.TokenEndpointResponse,
     dpopKey: CryptoKeyPair,
     client: oauth.Client,
+    authorizationServer: oauth.AuthorizationServer,
 }
 
 export class DPoPTokenProvider implements TokenProvider {
@@ -131,7 +132,7 @@ export class DPoPTokenProvider implements TokenProvider {
 
         const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
 
-        return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration}
+        return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
     }
 
     private async refreshToken(request: Request): Promise<CacheEntry | undefined> {
@@ -144,15 +145,14 @@ export class DPoPTokenProvider implements TokenProvider {
             return undefined
         }
 
-        const authorizationServer = await this.#asProvider.getAuthorizationServer(request)
         const dpop = oauth.DPoP({}, cached.dpopKey)
         const options = {DPoP: dpop, signal: request.signal}
 
-        const tokenResponse = await oauth.refreshTokenGrantRequest(authorizationServer, cached.client, this.getClientAuth(authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
+        const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
 
         let tokenResult: oauth.TokenEndpointResponse
         try {
-            tokenResult = await oauth.processRefreshTokenResponse(authorizationServer, cached.client, tokenResponse)
+            tokenResult = await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
         } catch (e) {
             if (e instanceof oauth.ResponseBodyError && e.error === "invalid_grant") {
                 console.debug("Access token could not be refreshed")
@@ -163,7 +163,7 @@ export class DPoPTokenProvider implements TokenProvider {
             throw e
         }
 
-        return {created: Date.now(), tokenResult, dpopKey: cached.dpopKey, client: cached.client}
+        return {created: Date.now(), tokenResult, dpopKey: cached.dpopKey, client: cached.client, authorizationServer: cached.authorizationServer}
     }
 
     private getClientAuth(issuer: string, client: oauth.OmitSymbolProperties<oauth.Client>): oauth.ClientAuth {
