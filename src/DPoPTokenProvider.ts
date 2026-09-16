@@ -16,7 +16,10 @@ type CacheEntry = {
 export class DPoPTokenProvider implements TokenProvider {
     readonly #codeProvider: CodeProvider
     readonly #callbackUri: string
-    readonly #cache = new Map<string, CacheEntry> // TODO: Take cache from caller
+
+    // TODO: Take cache from caller
+    // TODO: Once cache is externalized, document that it should not be shared between clients (which would lead to impersonation)
+    readonly #cache = new Map<string, CacheEntry>
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
 
