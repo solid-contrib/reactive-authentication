@@ -56,7 +56,7 @@ export class DPoPTokenProvider implements TokenProvider {
                 return cached
             }
 
-            const refreshed = await this.refreshToken(cached, request.signal)
+            const refreshed = await this.refreshToken(cached, request)
             if (refreshed !== undefined) {
                 this.#cache.set(request.url, refreshed)
                 return refreshed
@@ -137,13 +137,13 @@ export class DPoPTokenProvider implements TokenProvider {
         return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
     }
 
-    private async refreshToken(cached: CacheEntry, signal: AbortSignal): Promise<CacheEntry | undefined> {
+    private async refreshToken(cached: CacheEntry, request: Request): Promise<CacheEntry | undefined> {
         if (cached.tokenResult.refresh_token === undefined) {
             return undefined
         }
 
         const dpop = oauth.DPoP({}, cached.dpopKey)
-        const options = {DPoP: dpop, signal}
+        const options = {DPoP: dpop, signal: request.signal}
 
         const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
 
@@ -151,6 +151,8 @@ export class DPoPTokenProvider implements TokenProvider {
         try {
             tokenResult = await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
         } catch (e) {
+            this.#cache.delete(request.url)
+
             if (e instanceof oauth.ResponseBodyError && e.error === "invalid_grant") {
                 console.debug("Access token could not be refreshed")
 
