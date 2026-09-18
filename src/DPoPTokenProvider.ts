@@ -198,6 +198,8 @@ function isEssMissingIssInteractionNeeded(e: unknown) {
  * @remarks PodSpaces (ESS) seems to fail when spec is followed.
  *
  * @see Original code at https://github.com/panva/oauth4webapi/blob/b914d175a58a1738b65a360dc2f28d6c0f88a720/src/index.ts#L1777
+ * @see Bug report at https://inrupt.atlassian.net/servicedesk/customer/portal/4/FEEDBACK-443
+ * @see Bug repro at https://gist.github.com/langsamu/ac55045a6ddc5893000b722429146b3a#file-podspaces_client_auth_bug-html
  * @see Spec https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3.1
  */
 function NoUrlEncodeClientSecretBasic(clientSecret: string): oauth.ClientAuth {
@@ -207,6 +209,7 @@ function NoUrlEncodeClientSecretBasic(clientSecret: string): oauth.ClientAuth {
     };
 }
 
+// TODO: Eliminate once bug fixed
 function clientSecretBasicFor(issuer: string): (clientSecret: string) => oauth.ClientAuth {
     // TODO: Better fingerprinting ESS
     if (issuer.includes("login.inrupt.com")) {
