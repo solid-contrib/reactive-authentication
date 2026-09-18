@@ -51,14 +51,16 @@ export class DPoPTokenProvider implements TokenProvider {
         const cached = this.#cache.get(request.url)
 
         // TODO: Support actively refreshing the token
-        if (cached !== undefined && !isExpired(cached)) {
-            return cached
-        }
+        if (cached !== undefined) {
+            if (!isExpired(cached)) {
+                return cached
+            }
 
-        const refreshed = await this.refreshToken(request)
-        if (refreshed !== undefined) {
-            this.#cache.set(request.url, refreshed)
-            return refreshed
+            const refreshed = await this.refreshToken(cached, request.signal)
+            if (refreshed !== undefined) {
+                this.#cache.set(request.url, refreshed)
+                return refreshed
+            }
         }
 
         const fresh = await this.obtainToken(request)
@@ -135,18 +137,13 @@ export class DPoPTokenProvider implements TokenProvider {
         return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
     }
 
-    private async refreshToken(request: Request): Promise<CacheEntry | undefined> {
-        const cached = this.#cache.get(request.url)
-        if (cached === undefined) {
-            return undefined
-        }
-
+    private async refreshToken(cached: CacheEntry, signal: AbortSignal): Promise<CacheEntry | undefined> {
         if (cached.tokenResult.refresh_token === undefined) {
             return undefined
         }
 
         const dpop = oauth.DPoP({}, cached.dpopKey)
-        const options = {DPoP: dpop, signal: request.signal}
+        const options = {DPoP: dpop, signal}
 
         const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
 
