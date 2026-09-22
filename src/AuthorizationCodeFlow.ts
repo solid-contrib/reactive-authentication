@@ -177,9 +177,9 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
     async getCode(authorizationUri: URL, signal: AbortSignal): Promise<Disposable & { readonly value: string }> {
         // One flow at a time, fellas
         return await navigator.locks.request("AuthorizationCodeFlow.getCode", async _ => {
-            this.#authorizationUri = authorizationUri
-
             signal.throwIfAborted()
+
+            this.#authorizationUri = authorizationUri
 
             const {promise: responseFromPopup, reject: cancelCodeRequest, resolve: respondWithCode} = Promise.withResolvers<string>()
 
