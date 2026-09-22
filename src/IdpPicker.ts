@@ -3,7 +3,6 @@ import { NamedNodeAs, OptionalFrom, TermWrapper } from "@rdfjs/wrapper"
 import { DataFactory, Parser } from "n3"
 import type { Quad } from "@rdfjs/types"
 import { ReactiveAuthenticationError } from "./ReactiveAuthenticationError.js"
-import { Mutex } from "./Mutex.js"
 import { IssuerRequestCancelledError } from "./IssuerRequestCancelledError.js"
 import { IssuerProvider } from "./IssuerProvider.js"
 import type { WebIdPicker } from "./WebIdPicker.js"
@@ -58,7 +57,6 @@ const html = `
  * See the {@link getIssuer} method for integrating this element into your application.
  */
 export class IdpPicker extends HTMLElement implements IssuerProvider {
-    readonly #mutex = new Mutex
     #dialog!: HTMLDialogElement
     #input!: HTMLInputElement
     #code!: HTMLElement
@@ -93,34 +91,34 @@ export class IdpPicker extends HTMLElement implements IssuerProvider {
     }
 
     async getIssuer(request: Request): Promise<URL> {
-        using _ = await this.#mutex.acquire()
+        return await navigator.locks.request("IdpPicker.getIssuer", async _ => {
+            this.#request = request
+            this.#input.value = ""
+            this.#code.innerText = request.url
+            this.#dialog.returnValue = ""
+            this.#dialog.showModal()
 
-        this.#request = request
-        this.#input.value = ""
-        this.#code.innerText = request.url
-        this.#dialog.returnValue = ""
-        this.#dialog.showModal()
+            const {promise, reject, resolve} = Promise.withResolvers<URL>()
 
-        const {promise, reject, resolve} = Promise.withResolvers<URL>()
-
-        const onClose = () => {
-            request.signal.removeEventListener("abort", onAbort)
-            if (this.#dialog.returnValue !== "") {
-                resolve(new URL(this.#dialog.returnValue))
-            } else {
-                reject(new IssuerRequestCancelledError(request))
+            const onClose = () => {
+                request.signal.removeEventListener("abort", onAbort)
+                if (this.#dialog.returnValue !== "") {
+                    resolve(new URL(this.#dialog.returnValue))
+                } else {
+                    reject(new IssuerRequestCancelledError(request))
+                }
             }
-        }
-        const onAbort = () => {
-            this.#dialog.removeEventListener("close", onClose)
-            this.#dialog.close()
-            reject(request.signal.reason)
-        }
+            const onAbort = () => {
+                this.#dialog.removeEventListener("close", onClose)
+                this.#dialog.close()
+                reject(request.signal.reason)
+            }
 
-        request.signal.addEventListener("abort", onAbort, onlyOnce)
-        this.#dialog.addEventListener("close", onClose, onlyOnce)
+            request.signal.addEventListener("abort", onAbort, onlyOnce)
+            this.#dialog.addEventListener("close", onClose, onlyOnce)
 
-        return await promise
+            return await promise
+        })
     }
 
     async #useWebId() {

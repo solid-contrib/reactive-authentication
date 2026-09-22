@@ -1,4 +1,3 @@
-import { Mutex } from "./Mutex.js"
 import { CodeRequestCancelledError } from "./CodeRequestCancelledError.js"
 import type { CodeProvider } from "./CodeProvider.js"
 
@@ -121,7 +120,6 @@ const html = `
  * ```
  */
 export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
-    readonly #mutex = new Mutex
     #newModal!: HTMLDialogElement
     #switchModal!: HTMLDialogElement
     #authorizationWindow?: WindowProxy | null
@@ -178,44 +176,45 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
      */
     async getCode(authorizationUri: URL, signal: AbortSignal): Promise<Disposable & { readonly value: string }> {
         // One flow at a time, fellas
-        using _ = await this.#mutex.acquire()
+        return await navigator.locks.request("AuthorizationCodeFlow.getCode", async _ => {
+            signal.throwIfAborted()
 
-        this.#authorizationUri = authorizationUri
+            this.#authorizationUri = authorizationUri
 
-        const {promise: responseFromPopup, reject: cancelCodeRequest, resolve: respondWithCode} = Promise.withResolvers<string>()
-        signal.throwIfAborted()
+            const {promise: responseFromPopup, reject: cancelCodeRequest, resolve: respondWithCode} = Promise.withResolvers<string>()
 
-        this.#cancelCodeRequest = cancelCodeRequest
+            this.#cancelCodeRequest = cancelCodeRequest
 
-        const onMessage = (message: MessageEvent) => {
-            if (message.source !== this.#authorizationWindow) {
-                return
+            const onMessage = (message: MessageEvent) => {
+                if (message.source !== this.#authorizationWindow) {
+                    return
+                }
+
+                this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
+                signal.removeEventListener("abort", onAbort)
+                this.#switchModal.close()
+                respondWithCode(message.data)
             }
 
-            this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
-            signal.removeEventListener("abort", onAbort)
-            this.#switchModal.close()
-            respondWithCode(message.data)
-        }
+            const onAbort = () => {
+                this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
+                this.#newModal.close()
+                this.#switchModal.close()
+                this.#authorizationWindow?.close()
+                cancelCodeRequest(signal.reason)
+            }
 
-        const onAbort = () => {
-            this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
-            this.#newModal.close()
-            this.#switchModal.close()
-            this.#authorizationWindow?.close()
-            cancelCodeRequest(signal.reason)
-        }
+            signal.addEventListener("abort", onAbort, onlyOnce)
+            this.ownerDocument.defaultView?.addEventListener("message", onMessage)
 
-        signal.addEventListener("abort", onAbort, onlyOnce)
-        this.ownerDocument.defaultView?.addEventListener("message", onMessage)
+            this.#openAuthorizationWindow()
 
-        this.#openAuthorizationWindow()
+            if (this.#authorizationWindow === null) {
+                this.#interactionNeeded()
+            }
 
-        if (this.#authorizationWindow === null) {
-            this.#interactionNeeded()
-        }
-
-        return new ValueWithCleanup(await responseFromPopup, () => this.#authorizationWindow?.close())
+            return new ValueWithCleanup(await responseFromPopup, () => this.#authorizationWindow?.close())
+        })
     }
 
     cleanup(): void {
