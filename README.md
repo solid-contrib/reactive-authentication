@@ -77,6 +77,11 @@ npx http-server
 
 then navigate to [localhost:8080](http://localhost:8080) (or wherever it was served).
 
+## Requirements
+
+### Node.js
+
+When using this library in Node.js, the minimum supported version is 24.5.
 
 ## History
 
