@@ -166,11 +166,12 @@ export class DPoPTokenProvider implements TokenProvider {
         }
 
         // Reuse cached refreshed token if it wasn't rotated (token result didn't have one)
-        const newRefreshToken = tokenResult.refresh_token ?? cached.tokenResult.refresh_token
-        // Leave rest of token result intact
-        const newTokenResult = {...tokenResult, refresh_token: newRefreshToken}
+        if (tokenResult.refresh_token === undefined) {
+            // Leave rest of token result intact
+            tokenResult = {...tokenResult, refresh_token: cached.tokenResult.refresh_token}
+        }
 
-        return {created: Date.now(), tokenResult: newTokenResult, dpopKey: cached.dpopKey, client: cached.client, authorizationServer: cached.authorizationServer}
+        return {created: Date.now(), tokenResult, dpopKey: cached.dpopKey, client: cached.client, authorizationServer: cached.authorizationServer}
     }
 
     private getClientAuth(issuer: string, client: oauth.OmitSymbolProperties<oauth.Client>): oauth.ClientAuth {
