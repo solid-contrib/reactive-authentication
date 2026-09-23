@@ -37,6 +37,7 @@ export class DPoPTokenProvider implements TokenProvider {
 
     async upgrade(request: Request): Promise<Request> {
         // Form a queue per request URI to never reuse refresh tokens.
+        // TODO: Revise scope (origin+requestUri) of this lock which might interfere with scenarios that are not bound to origin
         const lockName = `DPoPTokenProvider.upgrade[${request.url}]`
         const {dpopKey, tokenResult: {access_token}} = await navigator.locks.request(lockName, async _ =>
             await this.getCachedToken(request))
