@@ -148,10 +148,9 @@ export class DPoPTokenProvider implements TokenProvider {
         const dpop = oauth.DPoP({}, cached.dpopKey)
         const options = {DPoP: dpop}
 
-        const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
-
         let tokenResult: oauth.TokenEndpointResponse
         try {
+            const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
             tokenResult = await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
         } catch (e) {
             this.#cache.delete(request.url)
