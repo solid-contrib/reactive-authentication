@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Browser cache smoke test</title>
+<body>
+<pre id="result">Running…</pre>
+<script type="module">
+import { IndexedDbCache } from "../dist/IndexedDbCache.js"
+import { WebStorageCache } from "../dist/WebStorageCache.js"
+import { createBrowserCaches } from "../dist/createBrowserCaches.js"
+
+const result = document.querySelector("#result")
+const assert = (condition, message) => { if (!condition) throw new Error(message) }
+// A unique test namespace avoids application data and permits independent tabs.
+const query = new URLSearchParams(location.search)
+const namespace = query.get("namespace") ?? `smoke-${crypto.randomUUID()}`
+const cache = new IndexedDbCache(namespace)
+const codec = { encode: JSON.stringify, decode: JSON.parse }
+const local = new WebStorageCache(localStorage, namespace, codec)
+const session = new WebStorageCache(sessionStorage, namespace, codec)
+const preset = createBrowserCaches(namespace)
+
+try {
+    if (!query.has("namespace")) {
+        const keys = await crypto.subtle.generateKey({name: "ECDSA", namedCurve: "P-256"}, false, ["sign", "verify"])
+        await cache.set("keys", keys)
+        await local.set("issuer", "https://idp.example/")
+        await session.set("issuer", "https://idp.example/")
+        await preset.issuer.set("resource", "https://idp.example/")
+        await preset.token.set("resource", {secret: "must stay in memory"})
+        location.replace(`?namespace=${encodeURIComponent(namespace)}`)
+    } else {
+        const keys = await cache.get("keys")
+        assert(keys.privateKey.extractable === false, "non-extractability lost across reload")
+        const data = new TextEncoder().encode("proof")
+        const algorithm = {name: "ECDSA", hash: "SHA-256"}
+        const signature = await crypto.subtle.sign(algorithm, keys.privateKey, data)
+        assert(await crypto.subtle.verify(algorithm, keys.publicKey, signature, data), "restored key cannot sign")
+        assert(await local.get("issuer") === "https://idp.example/", "localStorage not restored")
+        assert(await session.get("issuer") === "https://idp.example/", "sessionStorage not restored")
+        assert(await preset.issuer.get("resource") === "https://idp.example/", "preset metadata not restored")
+        assert(await preset.token.get("resource") === undefined, "preset persisted credentials")
+        const other = new IndexedDbCache(`${namespace}-other`)
+        await other.set("keep", true)
+        await cache.clear()
+        assert(await other.get("keep") === true, "clear crossed namespaces")
+        await other.clear()
+        await local.clear()
+        await session.clear()
+        await preset.issuer.clear()
+        result.textContent = "PASS: reload persistence, non-extractable key signing, Web Storage, browser preset, namespace isolation"
+    }
+} catch (error) {
+    result.textContent = `FAIL: ${error.stack}`
+}
+</script>
+</body>
+</html>
