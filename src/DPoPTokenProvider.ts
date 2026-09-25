@@ -1,3 +1,5 @@
+import type { Cache } from "./Cache.js"
+import { MemoryCache } from "./MemoryCache.js"
 import * as oauth from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { CodeProvider } from "./CodeProvider.js"
@@ -6,7 +8,8 @@ import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.
 import { ClientProvider } from "./ClientProvider.js"
 import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
 
-type CacheEntry = {
+/** Sensitive, structured-cloneable credential record. Never JSON-serialize its keys. */
+export type DPoPTokenCacheEntry = {
     created: number,
     tokenResult: oauth.TokenEndpointResponse,
     dpopKey: CryptoKeyPair,
@@ -18,13 +21,13 @@ export class DPoPTokenProvider implements TokenProvider {
     readonly #codeProvider: CodeProvider
     readonly #callbackUri: string
 
-    // TODO: Take cache from caller
-    // TODO: Once cache is externalized, document that it should not be shared between clients (which would lead to impersonation)
-    readonly #cache = new Map<string, CacheEntry>
+    // A cache must be isolated per application, client configuration and account.
+    readonly #cache: Cache<DPoPTokenCacheEntry>
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
 
-    constructor(callbackUri: string, codeProvider: CodeProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
+    constructor(callbackUri: string, codeProvider: CodeProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider, cache: Cache<DPoPTokenCacheEntry> = new MemoryCache()) {
+        this.#cache = cache
         this.#codeProvider = codeProvider
         this.#callbackUri = callbackUri
         this.#asProvider = asProvider
@@ -50,9 +53,9 @@ export class DPoPTokenProvider implements TokenProvider {
         return new Request(request, {headers})
     }
 
-    private async getCachedToken(request: Request): Promise<CacheEntry> {
+    private async getCachedToken(request: Request): Promise<DPoPTokenCacheEntry> {
         // TODO: More robust key via callback to support complex caching scenarios
-        const cached = this.#cache.get(request.url)
+        const cached = await this.#cache.get(request.url)
 
         // TODO: Support actively refreshing the token
         if (cached !== undefined) {
@@ -62,18 +65,18 @@ export class DPoPTokenProvider implements TokenProvider {
 
             const refreshed = await this.refreshToken(cached, request)
             if (refreshed !== undefined) {
-                this.#cache.set(request.url, refreshed)
+                await this.#cache.set(request.url, refreshed)
                 return refreshed
             }
         }
 
         const fresh = await this.obtainToken(request)
-        this.#cache.set(request.url, fresh)
+        await this.#cache.set(request.url, fresh)
 
         return fresh
     }
 
-    private async obtainToken(request: Request): Promise<CacheEntry> {
+    private async obtainToken(request: Request): Promise<DPoPTokenCacheEntry> {
         const authorizationServer = await this.#asProvider.getAuthorizationServer(request)
 
         const clientRegistration = await this.#clientProvider.getClient(authorizationServer, this.#callbackUri, request.signal)
@@ -142,10 +145,14 @@ export class DPoPTokenProvider implements TokenProvider {
         return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
     }
 
-    private async refreshToken(cached: CacheEntry, request: Request): Promise<CacheEntry | undefined> {
+    private async refreshToken(cached: DPoPTokenCacheEntry, request: Request): Promise<DPoPTokenCacheEntry | undefined> {
         if (cached.tokenResult.refresh_token === undefined) {
             return undefined
         }
+
+        // Remove before consuming a potentially rotating token. A failed grant/write
+        // must not leave a consumed refresh token available to another tab.
+        await this.#cache.delete(request.url)
 
         const dpop = oauth.DPoP({}, cached.dpopKey)
         const options = {DPoP: dpop}
@@ -155,8 +162,6 @@ export class DPoPTokenProvider implements TokenProvider {
             const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
             tokenResult = await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
         } catch (e) {
-            this.#cache.delete(request.url)
-
             if (e instanceof oauth.ResponseBodyError && e.error === "invalid_grant") {
                 console.debug("Access token could not be refreshed")
 
@@ -237,7 +242,7 @@ function clientSecretBasicFor(issuer: string): (clientSecret: string) => oauth.C
     return oauth.ClientSecretBasic
 }
 
-function isExpired(tokenData: CacheEntry) {
+function isExpired(tokenData: DPoPTokenCacheEntry) {
     // TODO: Add some headroom (expire a bit before limit)
     // TODO: What to do when `expires_in` is Missing? (optional in https://datatracker.ietf.org/doc/html/rfc6749#section-4.2.2)
     return Date.now() - tokenData.created > tokenData.tokenResult.expires_in! * 1_000;
