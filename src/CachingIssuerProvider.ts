@@ -3,22 +3,21 @@ import { MemoryCache } from "./MemoryCache.js"
 import { IssuerProvider } from "./IssuerProvider.js"
 
 export class CachingIssuerProvider implements IssuerProvider {
-    readonly #cache: Cache<string>
+    readonly #cache: Cache<URL> = new MemoryCache // TODO: Take cache from caller
     readonly #original: IssuerProvider
 
-    constructor(original: IssuerProvider, cache: Cache<string> = new MemoryCache()) {
-        this.#cache = cache
+    constructor(original: IssuerProvider) {
         this.#original = original
     }
 
     async getIssuer(request: Request): Promise<URL> {
-        const cached = await this.#cache.get(request.url)
-        if (cached !== undefined) {
-            return new URL(cached)
+        const cached = await this.#cache.getItem(request.url)
+        if (cached !== null) {
+            return cached
         }
 
         const fresh = await this.#original.getIssuer(request)
-        await this.#cache.set(request.url, fresh.href)
+        await this.#cache.setItem(request.url, fresh)
         return fresh
     }
 }

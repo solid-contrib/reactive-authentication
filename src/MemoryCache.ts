@@ -1,22 +1,18 @@
 import type { Cache } from "./Cache.js"
 
 /** Per-instance storage. Values retain their identity and are not serialized. */
-export class MemoryCache<T> implements Cache<T> {
-    readonly #values = new Map<string, T>()
+export class MemoryCache<T extends NonNullable<unknown>> implements Cache<T> {
+    readonly #values = new Map<string, T>
 
-    async get(key: string): Promise<T | undefined> {
-        return this.#values.get(key)
+    async getItem(key: string): Promise<T | null> {
+        return this.#values.get(key) ?? null
     }
 
-    async set(key: string, value: T): Promise<void> {
+    async setItem(key: string, value: T): Promise<void> {
         this.#values.set(key, value)
     }
 
-    async delete(key: string): Promise<void> {
+    async removeItem(key: string): Promise<void> {
         this.#values.delete(key)
-    }
-
-    async clear(): Promise<void> {
-        this.#values.clear()
     }
 }
