@@ -1,6 +1,5 @@
 import type { Cache } from "./Cache.js"
 
-/** Per-instance storage. Values retain their identity and are not serialized. */
 export class MemoryCache<T extends NonNullable<unknown>> implements Cache<T> {
     readonly #values = new Map<string, T>
 
