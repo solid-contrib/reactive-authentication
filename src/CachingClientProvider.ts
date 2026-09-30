@@ -1,8 +1,10 @@
+import type { Cache } from "./Cache.js"
+import { MemoryCache } from "./MemoryCache.js"
 import type { ClientProvider } from "./ClientProvider.js"
 import type * as oauth from "oauth4webapi"
 
 export class CachingClientProvider implements ClientProvider {
-    readonly #cache = new Map<string, oauth.Client> // TODO: Take cache from caller
+    readonly #cache: Cache<oauth.Client> = new MemoryCache // TODO: Take cache from caller
     readonly #original: ClientProvider
 
     constructor(original: ClientProvider) {
@@ -10,13 +12,13 @@ export class CachingClientProvider implements ClientProvider {
     }
 
     async getClient(as: oauth.AuthorizationServer, redirectUri: string, signal: AbortSignal): Promise<oauth.Client> {
-        const cached = this.#cache.get(as.issuer)
-        if (cached !== undefined) {
+        const cached = await this.#cache.getItem(as.issuer)
+        if (cached !== null) {
             return cached
         }
 
         const fresh = await this.#original.getClient(as, redirectUri, signal)
-        this.#cache.set(as.issuer, fresh)
+        await this.#cache.setItem(as.issuer, fresh)
         return fresh
     }
 }

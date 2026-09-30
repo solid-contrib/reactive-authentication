@@ -5,6 +5,8 @@ import type { TokenProvider } from "./TokenProvider.js"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 import { ClientProvider } from "./ClientProvider.js"
 import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
+import type { Cache } from "./Cache.js"
+import { MemoryCache } from "./MemoryCache.js"
 
 type CacheEntry = {
     created: number,
@@ -20,7 +22,7 @@ export class DPoPTokenProvider implements TokenProvider {
 
     // TODO: Take cache from caller
     // TODO: Once cache is externalized, document that it should not be shared between clients (which would lead to impersonation)
-    readonly #cache = new Map<string, CacheEntry>
+    readonly #cache: Cache<CacheEntry> = new MemoryCache
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
 
@@ -52,23 +54,23 @@ export class DPoPTokenProvider implements TokenProvider {
 
     private async getCachedToken(request: Request): Promise<CacheEntry> {
         // TODO: More robust key via callback to support complex caching scenarios
-        const cached = this.#cache.get(request.url)
+        const cached = await this.#cache.getItem(request.url)
 
         // TODO: Support actively refreshing the token
-        if (cached !== undefined) {
+        if (cached !== null) {
             if (!isExpired(cached)) {
                 return cached
             }
 
             const refreshed = await this.refreshToken(cached, request)
             if (refreshed !== undefined) {
-                this.#cache.set(request.url, refreshed)
+                await this.#cache.setItem(request.url, refreshed)
                 return refreshed
             }
         }
 
         const fresh = await this.obtainToken(request)
-        this.#cache.set(request.url, fresh)
+        await this.#cache.setItem(request.url, fresh)
 
         return fresh
     }
@@ -155,7 +157,7 @@ export class DPoPTokenProvider implements TokenProvider {
             const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
             tokenResult = await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
         } catch (e) {
-            this.#cache.delete(request.url)
+            await this.#cache.removeItem(request.url)
 
             if (e instanceof oauth.ResponseBodyError && e.error === "invalid_grant") {
                 console.debug("Access token could not be refreshed")
