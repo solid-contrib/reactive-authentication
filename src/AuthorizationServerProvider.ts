@@ -1,5 +1,5 @@
 import * as oauth from "oauth4webapi"
 
 export interface AuthorizationServerProvider {
-    getAuthorizationServer(request: Request): Promise<oauth.AuthorizationServer>
+    getAuthorizationServer(issuer: URL, signal: AbortSignal): Promise<oauth.AuthorizationServer>
 }
