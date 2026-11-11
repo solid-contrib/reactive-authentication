@@ -15,13 +15,15 @@ export class CachingIssuerProvider implements IssuerProvider {
 
     async getIssuer(request: Request): Promise<URL> {
         const key = await this.#cacheKeyProvider.getKey(request)
-        const cached = await this.#cache.getItem(key)
-        if (cached !== null) {
-            return cached
-        }
+        return await navigator.locks.request(`CachingIssuerProvider.getIssuer[${key}]`, async () => {
+            const cached = await this.#cache.getItem(key)
+            if (cached !== null) {
+                return cached
+            }
 
-        const fresh = await this.#original.getIssuer(request)
-        await this.#cache.setItem(key, fresh)
-        return fresh
+            const fresh = await this.#original.getIssuer(request)
+            await this.#cache.setItem(key, fresh)
+            return fresh
+        })
     }
 }
