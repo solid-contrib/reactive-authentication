@@ -7,6 +7,7 @@ import { ClientProvider } from "./ClientProvider.js"
 import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
 import type { Cache } from "./Cache.js"
 import { MemoryCache } from "./MemoryCache.js"
+import type { CacheKeyProvider } from "./CacheKeyProvider.js"
 
 type CacheEntry = {
     created: number,
@@ -25,12 +26,14 @@ export class DPoPTokenProvider implements TokenProvider {
     readonly #cache: Cache<CacheEntry> = new MemoryCache
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
+    readonly #cacheKeyProvider: CacheKeyProvider
 
-    constructor(callbackUri: string, codeProvider: CodeProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
+    constructor(callbackUri: string, codeProvider: CodeProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider, cacheKeyProvider: CacheKeyProvider) {
         this.#codeProvider = codeProvider
         this.#callbackUri = callbackUri
         this.#asProvider = asProvider
         this.#clientProvider = clientProvider
+        this.#cacheKeyProvider = cacheKeyProvider
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -38,11 +41,11 @@ export class DPoPTokenProvider implements TokenProvider {
     }
 
     async upgrade(request: Request): Promise<Request> {
-        // Form a queue per request URI to never reuse refresh tokens.
-        // TODO: Revise scope (origin+requestUri) of this lock which might interfere with scenarios that are not bound to origin
-        const lockName = `DPoPTokenProvider.upgrade[${request.url}]`
+        // Form a queue per cache key to never reuse refresh tokens.
+        const key = await this.#cacheKeyProvider.getKey(request)
+        const lockName = `DPoPTokenProvider.upgrade[${key}]`
         const {dpopKey, tokenResult: {access_token}} = await navigator.locks.request(lockName, async _ =>
-            await this.getCachedToken(request))
+            await this.getCachedToken(request, key))
 
         const headers = new Headers(request.headers)
 
@@ -52,9 +55,8 @@ export class DPoPTokenProvider implements TokenProvider {
         return new Request(request, {headers})
     }
 
-    private async getCachedToken(request: Request): Promise<CacheEntry> {
-        // TODO: More robust key via callback to support complex caching scenarios
-        const cached = await this.#cache.getItem(request.url)
+    private async getCachedToken(request: Request, key: string): Promise<CacheEntry> {
+        const cached = await this.#cache.getItem(key)
 
         // TODO: Support actively refreshing the token
         if (cached !== null) {
@@ -62,15 +64,15 @@ export class DPoPTokenProvider implements TokenProvider {
                 return cached
             }
 
-            const refreshed = await this.refreshToken(cached, request)
+            const refreshed = await this.refreshToken(cached, key)
             if (refreshed !== undefined) {
-                await this.#cache.setItem(request.url, refreshed)
+                await this.#cache.setItem(key, refreshed)
                 return refreshed
             }
         }
 
         const fresh = await this.obtainToken(request)
-        await this.#cache.setItem(request.url, fresh)
+        await this.#cache.setItem(key, fresh)
 
         return fresh
     }
@@ -144,7 +146,7 @@ export class DPoPTokenProvider implements TokenProvider {
         return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
     }
 
-    private async refreshToken(cached: CacheEntry, request: Request): Promise<CacheEntry | undefined> {
+    private async refreshToken(cached: CacheEntry, key: string): Promise<CacheEntry | undefined> {
         if (cached.tokenResult.refresh_token === undefined) {
             return undefined
         }
@@ -157,7 +159,7 @@ export class DPoPTokenProvider implements TokenProvider {
             const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
             tokenResult = await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
         } catch (e) {
-            await this.#cache.removeItem(request.url)
+            await this.#cache.removeItem(key)
 
             if (e instanceof oauth.ResponseBodyError && e.error === "invalid_grant") {
                 console.debug("Access token could not be refreshed")
