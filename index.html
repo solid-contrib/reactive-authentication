@@ -23,7 +23,7 @@
                 DPoPTokenProvider,
                 DynamicRegistrationClientProvider,
                 ReactiveFetchManager,
-                UrlCacheKeyProvider,
+                PatternCacheKeyProvider,
                 DiscoveryAuthorizationServerProvider
             } from "./dist/mod.js"
             import "./dist/registerElements.js"
@@ -31,7 +31,17 @@
             /* Reactive fetch infrastructure */
             const ui = document.querySelector("authorization-code-flow")
             const issuerUi = document.querySelector("idp-picker")
-            const cacheKeyProvider = new UrlCacheKeyProvider
+            const cacheKeyProvider = new PatternCacheKeyProvider(
+                new URLPattern({hostname: "storage.inrupt.com", pathname: "/:pod/*"}),
+                new URLPattern({hostname: "teamid.live", pathname: "/:pod/*"}),
+                new URLPattern({hostname: "solidweb.me", pathname: "/:pod/*"}),
+                new URLPattern({protocol: "http", hostname: "localhost", port: "3000", pathname: "/:pod/*"}),
+                new URLPattern({hostname: "*.solidweb.org"}),
+                new URLPattern({hostname: "*.solidweb.app"}),
+                new URLPattern({hostname: "*.datapod.igrant.io"}),
+                new URLPattern({hostname: "*.privatedatapod.com"}),
+                new URLPattern({hostname: "*.solidcommunity.net"})
+            )
             const issuerProvider = new CachingIssuerProvider(issuerUi, cacheKeyProvider)
             const asProvider = new DiscoveryAuthorizationServerProvider
             const cachingASProvider = new CachingAuthorizationServerProvider(asProvider)
