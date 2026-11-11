@@ -2,7 +2,7 @@ import type { IssuerProvider } from "./IssuerProvider.js"
 import * as oauth from "oauth4webapi"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 
-export class XASProvider implements AuthorizationServerProvider {
+export class DiscoveryAuthorizationServerProvider implements AuthorizationServerProvider {
     readonly #issuerProvider: IssuerProvider
 
     constructor(issuerProvider: IssuerProvider) {

@@ -23,7 +23,7 @@
                 DPoPTokenProvider,
                 DynamicRegistrationClientProvider,
                 ReactiveFetchManager,
-                XASProvider
+                DiscoveryAuthorizationServerProvider
             } from "./dist/mod.js"
             import "./dist/registerElements.js"
 
@@ -31,7 +31,7 @@
             const ui = document.querySelector("authorization-code-flow")
             const issuerUi = document.querySelector("idp-picker")
             const issuerProvider = new CachingIssuerProvider(issuerUi)
-            const asProvider = new XASProvider(issuerProvider)
+            const asProvider = new DiscoveryAuthorizationServerProvider(issuerProvider)
             const cachingASProvider = new CachingAuthorizationServerProvider(asProvider)
             const callbackUri = new URL("/callback.html", location.href).toString()
             const clientProvider = new DynamicRegistrationClientProvider
