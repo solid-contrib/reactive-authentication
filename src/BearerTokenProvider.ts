@@ -36,8 +36,13 @@ export class BearerTokenProvider implements TokenProvider {
         return "http://localhost:8080/callback.html"
     }
 
-    async matches(request: Request): Promise<boolean> {
-        return !request.url.includes(".solidweb.org")
+    async matches(request: Request, challenges: readonly oauth.WWWAuthenticateChallenge[]): Promise<boolean> {
+        // TODO: Remove server idiosyncrasy
+        if (request.url.includes(".solidweb.org")) {
+            return false
+        }
+
+        return challenges.some(({scheme}) => scheme === "bearer")
     }
 
     async upgrade(request: Request): Promise<Request> {
