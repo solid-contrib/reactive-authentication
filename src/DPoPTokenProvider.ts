@@ -33,8 +33,8 @@ export class DPoPTokenProvider implements TokenProvider {
         this.#clientProvider = clientProvider
     }
 
-    async matches(request: Request): Promise<boolean> {
-        return true
+    async matches(_: Request, challenges: readonly oauth.WWWAuthenticateChallenge[]): Promise<boolean> {
+        return challenges.some(({scheme}) => scheme === "dpop" || scheme === "bearer")
     }
 
     async upgrade(request: Request): Promise<Request> {
