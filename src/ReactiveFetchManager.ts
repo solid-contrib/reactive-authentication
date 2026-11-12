@@ -38,7 +38,7 @@ export class ReactiveFetchManager extends EventTarget {
 
     async #findProvider(request: Request): Promise<TokenProvider | undefined> {
         for (const provider of this.#providers) {
-            if (await provider.matches(request)) {
+            if (await provider.matches(request, [])) {
                 return provider
             }
         }
