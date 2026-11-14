@@ -5,6 +5,7 @@ import type { TokenProvider } from "./TokenProvider.js"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 import { ClientProvider } from "./ClientProvider.js"
 import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
+import { selectDPoPSigningAlgorithm } from "./selectDPoPSigningAlgorithm.js"
 import type { Cache } from "./Cache.js"
 import { MemoryCache } from "./MemoryCache.js"
 
@@ -82,7 +83,7 @@ export class DPoPTokenProvider implements TokenProvider {
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
 
-        const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false}) // TODO: Align with dpop_signing_alg_values_supported and fallback
+        const dpopKey = await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false})
         const dpop = oauth.DPoP({}, dpopKey)
 
         const codeVerifier = oauth.generateRandomCodeVerifier()
