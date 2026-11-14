@@ -2,6 +2,7 @@ import * as oauth from "oauth4webapi"
 import { AuthorizationServer } from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { TokenProvider } from "./TokenProvider.js"
+import { withDPoPNonceRetry } from "./dpopNonce.js"
 
 export class ClientCredentialsTokenProvider implements TokenProvider {
     constructor(private clientId: string, private clientSecret: string) {
@@ -44,12 +45,14 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
         const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false}) // TODO: Align with dpop_signing_alg_values_supported and fallback
         const dpop = oauth.DPoP({}, dpopKey)
 
-        const tokenResponse = await oauth.clientCredentialsGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer, clientRegistration), {scope: "webid"}, {
-            DPoP: dpop,
-            signal: request.signal
-        })
+        const tokenResult = await withDPoPNonceRetry(async () => {
+            const tokenResponse = await oauth.clientCredentialsGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer, clientRegistration), {scope: "webid"}, {
+                DPoP: dpop,
+                signal: request.signal
+            })
 
-        const tokenResult = await oauth.processClientCredentialsResponse(authorizationServer, clientRegistration, tokenResponse)
+            return await oauth.processClientCredentialsResponse(authorizationServer, clientRegistration, tokenResponse)
+        })
 
         const headers = new Headers(request.headers)
 
