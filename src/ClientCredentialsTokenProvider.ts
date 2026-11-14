@@ -2,6 +2,7 @@ import * as oauth from "oauth4webapi"
 import { AuthorizationServer } from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { TokenProvider } from "./TokenProvider.js"
+import { selectDPoPSigningAlgorithm } from "./selectDPoPSigningAlgorithm.js"
 
 export class ClientCredentialsTokenProvider implements TokenProvider {
     constructor(private clientId: string, private clientSecret: string) {
@@ -41,7 +42,7 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
 
         const clientRegistration: oauth.Client = {client_id: this.clientId, client_secret: this.clientSecret}
 
-        const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false}) // TODO: Align with dpop_signing_alg_values_supported and fallback
+        const dpopKey = await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false})
         const dpop = oauth.DPoP({}, dpopKey)
 
         const tokenResponse = await oauth.clientCredentialsGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer, clientRegistration), {scope: "webid"}, {
