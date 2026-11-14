@@ -157,8 +157,11 @@ export class DPoPTokenProvider implements TokenProvider {
 
         let tokenResult: oauth.TokenEndpointResponse
         try {
-            const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
-            tokenResult = await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
+            tokenResult = await withDPoPNonceRetry(async () => {
+                const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token!, options)
+
+                return await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
+            })
         } catch (e) {
             await this.#cache.removeItem(request.url)
 
