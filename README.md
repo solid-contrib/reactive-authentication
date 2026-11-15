@@ -62,6 +62,33 @@ The `ReactiveFetchManager` provides a `fetch` function that can be used to reque
 const response = await manager.fetch(requestUri)
 ```
 
+### Caches
+
+`CachingIssuerProvider`, `CachingAuthorizationServerProvider`, `CachingClientProvider` and `DPoPTokenProvider` keep what they learn in a `Cache`.
+Each one takes a cache as its last constructor argument. Without one, each instance uses its own `MemoryCache`, as before.
+
+```ts
+interface Cache<T> {
+    getItem(key: string): Promise<T | null>
+    setItem(key: string, value: T): Promise<void>
+    removeItem(key: string): Promise<void>
+}
+```
+
+The interface has the same shape as `KeyValueStore` in [Key Value Kit](https://github.com/jeswr/KeyValueKit), which has ready-made stores for browsers (memory, Web Storage, IndexedDB), Node.js, Bun, Deno, VS Code and Electron:
+
+```js
+import {createIndexedDbStore} from "@key-value-kit/storage/indexeddb"
+
+const clientProvider = new CachingClientProvider(new DynamicRegistrationClientProvider, createIndexedDbStore({namespace: "my-app:clients:v1"}))
+```
+
+Points to watch:
+
+- Cached values are the library's own objects. Use a store that keeps them as they are (memory, IndexedDB) or wrap a string store with a codec (Key Value Kit's `withCodec`). The issuer cache holds `URL` objects, which IndexedDB cannot store, so it needs a codec.
+- The `DPoPTokenProvider` cache holds access tokens, refresh tokens and non-extractable DPoP key pairs. Never share it between clients or users, and never put it in `localStorage` or `sessionStorage`.
+- A cache does not coordinate between tabs. `DPoPTokenProvider` uses a Web Lock so a refresh token is not used twice.
+
 ## Run the demo
 
 To compile,

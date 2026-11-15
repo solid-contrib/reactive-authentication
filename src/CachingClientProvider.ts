@@ -4,11 +4,16 @@ import type { ClientProvider } from "./ClientProvider.js"
 import type * as oauth from "oauth4webapi"
 
 export class CachingClientProvider implements ClientProvider {
-    readonly #cache: Cache<oauth.Client> = new MemoryCache // TODO: Take cache from caller
+    readonly #cache: Cache<oauth.Client>
     readonly #original: ClientProvider
 
-    constructor(original: ClientProvider) {
+    /**
+     * @param original The provider whose results are cached.
+     * @param cache Where results are kept. Defaults to a new {@link MemoryCache} owned by this instance.
+     */
+    constructor(original: ClientProvider, cache: Cache<oauth.Client> = new MemoryCache) {
         this.#original = original
+        this.#cache = cache
     }
 
     async getClient(as: oauth.AuthorizationServer, redirectUri: string, signal: AbortSignal): Promise<oauth.Client> {

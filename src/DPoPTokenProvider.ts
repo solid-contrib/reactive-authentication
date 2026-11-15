@@ -8,7 +8,11 @@ import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
 import type { Cache } from "./Cache.js"
 import { MemoryCache } from "./MemoryCache.js"
 
-type CacheEntry = {
+/**
+ * What {@link DPoPTokenProvider} caches for each key: the token response, its DPoP key pair, and the client and
+ * authorization server they were obtained from.
+ */
+export type DPoPTokenCacheEntry = {
     created: number,
     tokenResult: oauth.TokenEndpointResponse,
     dpopKey: CryptoKeyPair,
@@ -20,17 +24,22 @@ export class DPoPTokenProvider implements TokenProvider {
     readonly #codeProvider: CodeProvider
     readonly #callbackUri: string
 
-    // TODO: Take cache from caller
-    // TODO: Once cache is externalized, document that it should not be shared between clients (which would lead to impersonation)
-    readonly #cache: Cache<CacheEntry> = new MemoryCache
+    readonly #cache: Cache<DPoPTokenCacheEntry>
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
 
-    constructor(callbackUri: string, codeProvider: CodeProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
+    /**
+     * @param cache Where tokens, refresh tokens and DPoP key pairs are kept. Defaults to a new {@link MemoryCache} owned by
+     * this instance. Never share one cache between clients or users: an entry is a usable credential, so a shared cache
+     * lets one client act as another. A persistent cache must hold non-extractable `CryptoKeyPair`s, so use structured
+     * storage such as IndexedDB, never `localStorage` or `sessionStorage`.
+     */
+    constructor(callbackUri: string, codeProvider: CodeProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider, cache: Cache<DPoPTokenCacheEntry> = new MemoryCache) {
         this.#codeProvider = codeProvider
         this.#callbackUri = callbackUri
         this.#asProvider = asProvider
         this.#clientProvider = clientProvider
+        this.#cache = cache
     }
 
     async matches(request: Request): Promise<boolean> {
@@ -52,7 +61,7 @@ export class DPoPTokenProvider implements TokenProvider {
         return new Request(request, {headers})
     }
 
-    private async getCachedToken(request: Request): Promise<CacheEntry> {
+    private async getCachedToken(request: Request): Promise<DPoPTokenCacheEntry> {
         // TODO: More robust key via callback to support complex caching scenarios
         const cached = await this.#cache.getItem(request.url)
 
@@ -75,7 +84,7 @@ export class DPoPTokenProvider implements TokenProvider {
         return fresh
     }
 
-    private async obtainToken(request: Request): Promise<CacheEntry> {
+    private async obtainToken(request: Request): Promise<DPoPTokenCacheEntry> {
         const authorizationServer = await this.#asProvider.getAuthorizationServer(request)
 
         const clientRegistration = await this.#clientProvider.getClient(authorizationServer, this.#callbackUri, request.signal)
@@ -144,7 +153,7 @@ export class DPoPTokenProvider implements TokenProvider {
         return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
     }
 
-    private async refreshToken(cached: CacheEntry, request: Request): Promise<CacheEntry | undefined> {
+    private async refreshToken(cached: DPoPTokenCacheEntry, request: Request): Promise<DPoPTokenCacheEntry | undefined> {
         if (cached.tokenResult.refresh_token === undefined) {
             return undefined
         }
@@ -239,7 +248,7 @@ function clientSecretBasicFor(issuer: string): (clientSecret: string) => oauth.C
     return oauth.ClientSecretBasic
 }
 
-function isExpired(tokenData: CacheEntry) {
+function isExpired(tokenData: DPoPTokenCacheEntry) {
     // TODO: Add some headroom (expire a bit before limit)
     // TODO: What to do when `expires_in` is Missing? (optional in https://datatracker.ietf.org/doc/html/rfc6749#section-4.2.2)
     return Date.now() - tokenData.created > tokenData.tokenResult.expires_in! * 1_000;
