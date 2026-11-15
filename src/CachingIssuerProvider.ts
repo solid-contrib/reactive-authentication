@@ -4,13 +4,19 @@ import { IssuerProvider } from "./IssuerProvider.js"
 import type { CacheKeyProvider } from "./CacheKeyProvider.js"
 
 export class CachingIssuerProvider implements IssuerProvider {
-    readonly #cache: Cache<URL> = new MemoryCache // TODO: Take cache from caller
+    readonly #cache: Cache<URL>
     readonly #original: IssuerProvider
     readonly #cacheKeyProvider: CacheKeyProvider
 
-    constructor(original: IssuerProvider, cacheKeyProvider: CacheKeyProvider) {
+    /**
+     * @param original The provider whose results are cached.
+     * @param cacheKeyProvider Turns a request into the key its issuer is cached under.
+     * @param cache Where results are kept. Defaults to a new {@link MemoryCache} owned by this instance.
+     */
+    constructor(original: IssuerProvider, cacheKeyProvider: CacheKeyProvider, cache: Cache<URL> = new MemoryCache) {
         this.#original = original
         this.#cacheKeyProvider = cacheKeyProvider
+        this.#cache = cache
     }
 
     async getIssuer(request: Request): Promise<URL> {
