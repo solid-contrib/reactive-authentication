@@ -4,11 +4,16 @@ import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.
 import type * as oauth from "oauth4webapi"
 
 export class CachingAuthorizationServerProvider implements AuthorizationServerProvider {
-    readonly #cache: Cache<oauth.AuthorizationServer> = new MemoryCache // TODO: Take cache from caller
+    readonly #cache: Cache<oauth.AuthorizationServer>
     readonly #original: AuthorizationServerProvider
 
-    constructor(original: AuthorizationServerProvider) {
+    /**
+     * @param original The provider whose results are cached.
+     * @param cache Where results are kept. Defaults to a new {@link MemoryCache} owned by this instance.
+     */
+    constructor(original: AuthorizationServerProvider, cache: Cache<oauth.AuthorizationServer> = new MemoryCache) {
         this.#original = original
+        this.#cache = cache
     }
 
     async getAuthorizationServer(request: Request): Promise<oauth.AuthorizationServer> {
