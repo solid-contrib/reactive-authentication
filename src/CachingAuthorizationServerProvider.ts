@@ -11,14 +11,15 @@ export class CachingAuthorizationServerProvider implements AuthorizationServerPr
         this.#original = original
     }
 
-    async getAuthorizationServer(request: Request): Promise<oauth.AuthorizationServer> {
-        const cached = await this.#cache.getItem(request.url)
+    async getAuthorizationServer(issuer: URL, signal: AbortSignal): Promise<oauth.AuthorizationServer> {
+        const key = issuer.href
+        const cached = await this.#cache.getItem(key)
         if (cached !== null) {
             return cached
         }
 
-        const fresh = await this.#original.getAuthorizationServer(request)
-        await this.#cache.setItem(request.url, fresh)
+        const fresh = await this.#original.getAuthorizationServer(issuer, signal)
+        await this.#cache.setItem(key, fresh)
         return fresh
     }
 }

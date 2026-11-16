@@ -8,6 +8,7 @@ import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
 import { withDPoPNonceRetry } from "./dpopNonce.js"
 import type { Cache } from "./Cache.js"
 import { MemoryCache } from "./MemoryCache.js"
+import type { IssuerProvider } from "./IssuerProvider.js"
 
 type CacheEntry = {
     created: number,
@@ -21,29 +22,35 @@ export class DPoPTokenProvider implements TokenProvider {
     readonly #codeProvider: CodeProvider
     readonly #callbackUri: string
 
+    // Keyed by issuer. This assumes Solid-OIDC access tokens (aud "solid"), which are valid at any resource server that trusts the issuer.
+    // TODO: Request-specific access tokens (e.g. UMA RPTs, audience-restricted tokens per RFC 8707) require further work: they must not be shared across resources by issuer.
     // TODO: Take cache from caller
     // TODO: Once cache is externalized, document that it should not be shared between clients (which would lead to impersonation)
     readonly #cache: Cache<CacheEntry> = new MemoryCache
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
+    readonly #issuerProvider: IssuerProvider
 
-    constructor(callbackUri: string, codeProvider: CodeProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
+    constructor(callbackUri: string, codeProvider: CodeProvider, issuerProvider: IssuerProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
         this.#codeProvider = codeProvider
         this.#callbackUri = callbackUri
         this.#asProvider = asProvider
         this.#clientProvider = clientProvider
+        this.#issuerProvider = issuerProvider
     }
 
-    async matches(request: Request): Promise<boolean> {
-        return true
+    async matches(_: Request, challenges: readonly oauth.WWWAuthenticateChallenge[]): Promise<boolean> {
+        // Servers (CSS, NSS) advertise only Bearer but accept DPoP-bound tokens, which RFC 9449 §7.1 permits
+        return challenges.some(({scheme}) => scheme === "dpop" || scheme === "bearer")
     }
 
     async upgrade(request: Request): Promise<Request> {
-        // Form a queue per request URI to never reuse refresh tokens.
-        // TODO: Revise scope (origin+requestUri) of this lock which might interfere with scenarios that are not bound to origin
-        const lockName = `DPoPTokenProvider.upgrade[${request.url}]`
+        // Form a queue per issuer to never reuse refresh tokens.
+        // The token obtained here is reused for every request with the same issuer (see #cache).
+        const issuer = await this.#issuerProvider.getIssuer(request)
+        const lockName = `DPoPTokenProvider.upgrade[${issuer.href}]`
         const {dpopKey, tokenResult: {access_token}} = await navigator.locks.request(lockName, async _ =>
-            await this.getCachedToken(request))
+            await this.getCachedToken(request, issuer))
 
         const headers = new Headers(request.headers)
 
@@ -53,9 +60,8 @@ export class DPoPTokenProvider implements TokenProvider {
         return new Request(request, {headers})
     }
 
-    private async getCachedToken(request: Request): Promise<CacheEntry> {
-        // TODO: More robust key via callback to support complex caching scenarios
-        const cached = await this.#cache.getItem(request.url)
+    private async getCachedToken(request: Request, issuer: URL): Promise<CacheEntry> {
+        const cached = await this.#cache.getItem(issuer.href)
 
         // TODO: Support actively refreshing the token
         if (cached !== null) {
@@ -63,21 +69,21 @@ export class DPoPTokenProvider implements TokenProvider {
                 return cached
             }
 
-            const refreshed = await this.refreshToken(cached, request)
+            const refreshed = await this.refreshToken(cached, issuer)
             if (refreshed !== undefined) {
-                await this.#cache.setItem(request.url, refreshed)
+                await this.#cache.setItem(issuer.href, refreshed)
                 return refreshed
             }
         }
 
-        const fresh = await this.obtainToken(request)
-        await this.#cache.setItem(request.url, fresh)
+        const fresh = await this.obtainToken(request, issuer)
+        await this.#cache.setItem(issuer.href, fresh)
 
         return fresh
     }
 
-    private async obtainToken(request: Request): Promise<CacheEntry> {
-        const authorizationServer = await this.#asProvider.getAuthorizationServer(request)
+    private async obtainToken(request: Request, issuer: URL): Promise<CacheEntry> {
+        const authorizationServer = await this.#asProvider.getAuthorizationServer(issuer, request.signal)
 
         const clientRegistration = await this.#clientProvider.getClient(authorizationServer, this.#callbackUri, request.signal)
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
@@ -147,7 +153,7 @@ export class DPoPTokenProvider implements TokenProvider {
         return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
     }
 
-    private async refreshToken(cached: CacheEntry, request: Request): Promise<CacheEntry | undefined> {
+    private async refreshToken(cached: CacheEntry, issuer: URL): Promise<CacheEntry | undefined> {
         if (cached.tokenResult.refresh_token === undefined) {
             return undefined
         }
@@ -163,7 +169,7 @@ export class DPoPTokenProvider implements TokenProvider {
                 return await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
             })
         } catch (e) {
-            await this.#cache.removeItem(request.url)
+            await this.#cache.removeItem(issuer.href)
 
             if (e instanceof oauth.ResponseBodyError && e.error === "invalid_grant") {
                 console.debug("Access token could not be refreshed")
