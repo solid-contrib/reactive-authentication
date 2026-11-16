@@ -62,6 +62,20 @@ The `ReactiveFetchManager` provides a `fetch` function that can be used to reque
 const response = await manager.fetch(requestUri)
 ```
 
+### Provider matching
+
+When a response has status `401`, the manager parses its `WWW-Authenticate` challenges and gives them to `matches` of each provider, in the order of the list.
+The first provider that matches upgrades the request.
+
+| Provider                         | Matches when a challenge has scheme |
+|----------------------------------|-------------------------------------|
+| `DPoPTokenProvider`              | `DPoP` or `Bearer`                  |
+| `ClientCredentialsTokenProvider` | `DPoP` or `Bearer`                  |
+| `BearerTokenProvider`            | `Bearer`                            |
+
+No provider matches when the header is missing, cannot be parsed or is not exposed to the browser by CORS.
+Several providers can match the same response, so put the more specific provider earlier in the list.
+
 ## Run the demo
 
 To compile,

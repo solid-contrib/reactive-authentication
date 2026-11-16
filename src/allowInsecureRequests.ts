@@ -12,7 +12,7 @@ let warned = false
  *
  * @example
  * ```ts
- * new DiscoveryAuthorizationServerProvider(issuerProvider, allowInsecureRequests())
+ * new DiscoveryAuthorizationServerProvider(allowInsecureRequests())
  * ```
  *
  * @see {@link oauth.allowInsecureRequests}
