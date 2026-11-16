@@ -27,8 +27,9 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
         }
     }
 
-    async matches(request: Request): Promise<boolean> {
-        return true
+    async matches(_: Request, challenges: readonly oauth.WWWAuthenticateChallenge[]): Promise<boolean> {
+        // Servers (CSS, NSS) advertise only Bearer but accept DPoP-bound tokens, which RFC 9449 §7.1 permits
+        return challenges.some(({scheme}) => scheme === "dpop" || scheme === "bearer")
     }
 
     async upgrade(request: Request): Promise<Request> {

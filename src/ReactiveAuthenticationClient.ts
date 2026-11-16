@@ -1,4 +1,6 @@
+import type { WWWAuthenticateChallenge } from "oauth4webapi"
 import type { TokenProvider } from "./TokenProvider.js"
+import { parseChallenges } from "./parseChallenges.js"
 
 export class ReactiveAuthenticationClient {
     readonly #fetch: typeof globalThis.fetch
@@ -15,7 +17,7 @@ export class ReactiveAuthenticationClient {
             return response
         }
 
-        const provider = await this.#findProvider(request)
+        const provider = await this.#findProvider(request, parseChallenges(response.headers.get("WWW-Authenticate")))
         if (provider === undefined) {
             return response
         }
@@ -24,9 +26,9 @@ export class ReactiveAuthenticationClient {
         return this.#fetch.call(undefined, upgraded)
     }
 
-    async #findProvider(request: Request): Promise<TokenProvider | undefined> {
+    async #findProvider(request: Request, challenges: readonly WWWAuthenticateChallenge[]): Promise<TokenProvider | undefined> {
         for (const provider of this.#providers) {
-            if (await provider.matches(request)) {
+            if (await provider.matches(request, challenges)) {
                 return provider
             }
         }
