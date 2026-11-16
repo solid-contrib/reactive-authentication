@@ -68,6 +68,20 @@ The DPoP key is non-extractable and its algorithm comes from the Authorization S
 
 The first supported algorithm in the order ES256, EdDSA, PS256, RS256 is used. If the metadata is absent, ES256 is used. If the server supports none of them, an error is thrown.
 
+### Provider matching
+
+When a response has status `401`, the manager parses its `WWW-Authenticate` challenges and gives them to `matches` of each provider, in the order of the list.
+The first provider that matches upgrades the request.
+
+| Provider                         | Matches when a challenge has scheme |
+|----------------------------------|-------------------------------------|
+| `DPoPTokenProvider`              | `DPoP` or `Bearer`                  |
+| `ClientCredentialsTokenProvider` | `DPoP` or `Bearer`                  |
+| `BearerTokenProvider`            | `Bearer`                            |
+
+No provider matches when the header is missing, cannot be parsed or is not exposed to the browser by CORS.
+Several providers can match the same response, so put the more specific provider earlier in the list.
+
 ## Run the demo
 
 To compile,

@@ -23,6 +23,7 @@
                 DPoPTokenProvider,
                 DynamicRegistrationClientProvider,
                 ReactiveFetchManager,
+                PatternCacheKeyProvider,
                 DiscoveryAuthorizationServerProvider
             } from "./dist/mod.js"
             import "./dist/registerElements.js"
@@ -30,15 +31,26 @@
             /* Reactive fetch infrastructure */
             const ui = document.querySelector("authorization-code-flow")
             const issuerUi = document.querySelector("idp-picker")
-            const issuerProvider = new CachingIssuerProvider(issuerUi)
-            const asProvider = new DiscoveryAuthorizationServerProvider(issuerProvider)
+            const cacheKeyProvider = new PatternCacheKeyProvider(
+                new URLPattern({protocol: "https", hostname: "storage.inrupt.com", pathname: "/:pod/*"}),
+                new URLPattern({protocol: "https", hostname: "teamid.live", pathname: "/:pod/*"}),
+                new URLPattern({protocol: "https", hostname: "solidweb.me", pathname: "/:pod/*"}),
+                new URLPattern({protocol: "http", hostname: "localhost", port: "3000", pathname: "/:pod/*"}),
+                new URLPattern({protocol: "https", hostname: "*.solidweb.org"}),
+                new URLPattern({protocol: "https", hostname: "*.solidweb.app"}),
+                new URLPattern({protocol: "https", hostname: "*.datapod.igrant.io"}),
+                new URLPattern({protocol: "https", hostname: "*.privatedatapod.com"}),
+                new URLPattern({protocol: "https", hostname: "*.solidcommunity.net"})
+            )
+            const issuerProvider = new CachingIssuerProvider(issuerUi, cacheKeyProvider)
+            const asProvider = new DiscoveryAuthorizationServerProvider
             const cachingASProvider = new CachingAuthorizationServerProvider(asProvider)
             const callbackUri = new URL("/callback.html", location.href).toString()
             const clientProvider = new DynamicRegistrationClientProvider
             // const clientProvider = new ClientIdClientProvider(new URL("./id.jsonld", location.href))
             const cachingClientProvider = new CachingClientProvider(clientProvider)
 
-            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui, cachingASProvider, cachingClientProvider)
+            const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui, issuerProvider, cachingASProvider, cachingClientProvider)
 
             const fetch = new ReactiveFetchManager([dPoPTokenProvider]).fetch
 
@@ -76,16 +88,61 @@
         </script>
     </head>
     <body>
-        <button class="fetch" value="https://echo.free.beeceptor.com/">echo</button>
-        <button class="fetch" value="https://langsamu.solidcommunity.net/settings/">solidcommunity.net (CSS)</button>
-        <button class="fetch" value="https://storage.inrupt.com/d5e2efbd-1dd6-4c45-b6a3-e61a05bb9d49/">PodSpaces (ESS)</button>
-        <button class="fetch" value="https://langsamu.datapod.igrant.io/settings/">datapod.igrant.io (NSS 5.7.4)</button>
-        <button class="fetch" value="https://langsamu.solidweb.app/settings/">solidweb.app (JSS)</button>
-        <button class="fetch" value="https://teamid.live/langsamu/settings/">teamid.live (CSS)</button>
-        <button class="fetch" value="https://langsamu.solidweb.org/settings/">solidweb.org (NSS 6.0.0)</button>
-        <button class="fetch" value="https://langsamu.privatedatapod.com/settings/">privatedatapod (CSS)</button>
-        <button class="fetch" value="https://solidweb.me/langsamu/profile/">solidweb.me (CSS)</button>
-        <button class="fetch" value="http://localhost:3000/a/profile/">localhost (CSS)</button>
+        <p>
+            <button class="fetch" value="https://echo.free.beeceptor.com/">echo</button>
+        </p>
+        <p>
+            solidcommunity.net (CSS):
+            <button class="fetch" value="https://langsamu.solidcommunity.net/settings/">settings/</button>
+            <button class="fetch" value="https://langsamu.solidcommunity.net/settings/prefs.ttl">settings/prefs.ttl</button>
+            <button class="fetch" value="https://langsamu.solidcommunity.net/private/">private/</button>
+        </p>
+        <p>
+            PodSpaces (ESS):
+            <button class="fetch" value="https://storage.inrupt.com/d5e2efbd-1dd6-4c45-b6a3-e61a05bb9d49/">/</button>
+            <button class="fetch" value="https://storage.inrupt.com/d5e2efbd-1dd6-4c45-b6a3-e61a05bb9d49/settings/">settings/</button>
+            <button class="fetch" value="https://storage.inrupt.com/d5e2efbd-1dd6-4c45-b6a3-e61a05bb9d49/private/">private/</button>
+        </p>
+        <p>
+            datapod.igrant.io (NSS 5.7.4):
+            <button class="fetch" value="https://langsamu.datapod.igrant.io/settings/">settings/</button>
+            <button class="fetch" value="https://langsamu.datapod.igrant.io/settings/prefs.ttl">settings/prefs.ttl</button>
+            <button class="fetch" value="https://langsamu.datapod.igrant.io/private/">private/</button>
+        </p>
+        <p>
+            solidweb.app (JSS):
+            <button class="fetch" value="https://langsamu.solidweb.app/settings/">settings/</button>
+            <button class="fetch" value="https://langsamu.solidweb.app/settings/prefs.ttl">settings/prefs.ttl</button>
+            <button class="fetch" value="https://langsamu.solidweb.app/private/">private/</button>
+        </p>
+        <p>
+            teamid.live (CSS):
+            <button class="fetch" value="https://teamid.live/langsamu/settings/">settings/</button>
+            <button class="fetch" value="https://teamid.live/langsamu/settings/prefs.ttl">settings/prefs.ttl</button>
+            <button class="fetch" value="https://teamid.live/langsamu/private/">private/</button>
+        </p>
+        <p>
+            solidweb.org (NSS 6.0.0):
+            <button class="fetch" value="https://langsamu.solidweb.org/settings/">settings/</button>
+            <button class="fetch" value="https://langsamu.solidweb.org/settings/prefs.ttl">settings/prefs.ttl</button>
+            <button class="fetch" value="https://langsamu.solidweb.org/private/">private/</button>
+        </p>
+        <p>
+            privatedatapod (CSS):
+            <button class="fetch" value="https://langsamu.privatedatapod.com/settings/">settings/</button>
+            <button class="fetch" value="https://langsamu.privatedatapod.com/settings/prefs.ttl">settings/prefs.ttl</button>
+            <button class="fetch" value="https://langsamu.privatedatapod.com/private/">private/</button>
+        </p>
+        <p>
+            solidweb.me (CSS):
+            <button class="fetch" value="https://solidweb.me/langsamu/profile/">profile/</button>
+            <button class="fetch" value="https://solidweb.me/langsamu/settings/">settings/</button>
+            <button class="fetch" value="https://solidweb.me/langsamu/private/">private/</button>
+        </p>
+        <p>
+            localhost (CSS):
+            <button class="fetch" value="http://localhost:3000/a/profile/">profile/</button>
+        </p>
         <authorization-code-flow>
             <span slot="new-text">USER INTERACTION NEEDED TO LAUNCH AUTHORIZATION CODE FLOW IN NEW WINDOW.</span>
             <span slot="new-open">OPEN</span>
