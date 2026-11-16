@@ -62,6 +62,12 @@ The `ReactiveFetchManager` provides a `fetch` function that can be used to reque
 const response = await manager.fetch(requestUri)
 ```
 
+### DPoP key algorithm
+
+The DPoP key is non-extractable and its algorithm comes from the Authorization Server's `dpop_signing_alg_values_supported` metadata.
+
+The first supported algorithm in the order ES256, EdDSA, PS256, RS256 is used. If the metadata is absent, ES256 is used. If the server supports none of them, an error is thrown.
+
 ### Provider matching
 
 When a response has status `401`, the manager parses its `WWW-Authenticate` challenges and gives them to `matches` of each provider, in the order of the list.

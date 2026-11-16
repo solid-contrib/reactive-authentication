@@ -3,9 +3,13 @@ import { AuthorizationServer } from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { TokenProvider } from "./TokenProvider.js"
 import { withDPoPNonceRetry } from "./dpopNonce.js"
+import { selectDPoPSigningAlgorithm } from "./selectDPoPSigningAlgorithm.js"
 
 export class ClientCredentialsTokenProvider implements TokenProvider {
-    constructor(private clientId: string, private clientSecret: string) {
+    readonly #options: oauth.HttpRequestOptions<string, any> | undefined
+
+    constructor(private clientId: string, private clientSecret: string, options?: oauth.HttpRequestOptions<string, any>) {
+        this.#options = options
     }
 
     async #getIssuer(request: Request): Promise<URL> {
@@ -37,17 +41,19 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
         const issuer = await this.#getIssuer(request)
 
         const discoveryResponse = await oauth.discoveryRequest(issuer, {
+            ...this.#options,
             signal: request.signal
         })
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
 
         const clientRegistration: oauth.Client = {client_id: this.clientId, client_secret: this.clientSecret}
 
-        const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false}) // TODO: Align with dpop_signing_alg_values_supported and fallback
+        const dpopKey = await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false})
         const dpop = oauth.DPoP({}, dpopKey)
 
         const tokenResult = await withDPoPNonceRetry(async () => {
             const tokenResponse = await oauth.clientCredentialsGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer, clientRegistration), {scope: "webid"}, {
+                ...this.#options,
                 DPoP: dpop,
                 signal: request.signal
             })

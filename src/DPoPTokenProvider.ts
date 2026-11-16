@@ -6,6 +6,7 @@ import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.
 import { ClientProvider } from "./ClientProvider.js"
 import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
 import { withDPoPNonceRetry } from "./dpopNonce.js"
+import { selectDPoPSigningAlgorithm } from "./selectDPoPSigningAlgorithm.js"
 import type { Cache } from "./Cache.js"
 import { MemoryCache } from "./MemoryCache.js"
 import type { IssuerProvider } from "./IssuerProvider.js"
@@ -30,13 +31,15 @@ export class DPoPTokenProvider implements TokenProvider {
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
     readonly #issuerProvider: IssuerProvider
+    readonly #options: oauth.HttpRequestOptions<string, any> | undefined
 
-    constructor(callbackUri: string, codeProvider: CodeProvider, issuerProvider: IssuerProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
+    constructor(callbackUri: string, codeProvider: CodeProvider, issuerProvider: IssuerProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider, options?: oauth.HttpRequestOptions<string, any>) {
         this.#codeProvider = codeProvider
         this.#callbackUri = callbackUri
         this.#asProvider = asProvider
         this.#clientProvider = clientProvider
         this.#issuerProvider = issuerProvider
+        this.#options = options
     }
 
     async matches(_: Request, challenges: readonly oauth.WWWAuthenticateChallenge[]): Promise<boolean> {
@@ -89,7 +92,7 @@ export class DPoPTokenProvider implements TokenProvider {
         const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
         const [registeredResponseType] = clientRegistration.response_types as string[]
 
-        const dpopKey = await oauth.generateKeyPair("ES256", {extractable: false}) // TODO: Align with dpop_signing_alg_values_supported and fallback
+        const dpopKey = await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false})
         const dpop = oauth.DPoP({}, dpopKey)
 
         const codeVerifier = oauth.generateRandomCodeVerifier()
@@ -145,7 +148,7 @@ export class DPoPTokenProvider implements TokenProvider {
         }
 
         const tokenResult = await withDPoPNonceRetry(async () => {
-            const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal: request.signal})
+            const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {...this.#options, DPoP: dpop, signal: request.signal})
 
             return await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
         })
@@ -159,7 +162,7 @@ export class DPoPTokenProvider implements TokenProvider {
         }
 
         const dpop = oauth.DPoP({}, cached.dpopKey)
-        const options = {DPoP: dpop}
+        const options = {...this.#options, DPoP: dpop}
 
         let tokenResult: oauth.TokenEndpointResponse
         try {
