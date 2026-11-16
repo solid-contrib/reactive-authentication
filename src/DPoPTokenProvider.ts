@@ -5,6 +5,7 @@ import type { TokenProvider } from "./TokenProvider.js"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 import { ClientProvider } from "./ClientProvider.js"
 import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
+import { withDPoPNonceRetry } from "./dpopNonce.js"
 import { selectDPoPSigningAlgorithm } from "./selectDPoPSigningAlgorithm.js"
 import type { Cache } from "./Cache.js"
 import { MemoryCache } from "./MemoryCache.js"
@@ -146,9 +147,11 @@ export class DPoPTokenProvider implements TokenProvider {
             }
         }
 
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {...this.#options, DPoP: dpop, signal: request.signal})
+        const tokenResult = await withDPoPNonceRetry(async () => {
+            const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {...this.#options, DPoP: dpop, signal: request.signal})
 
-        const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
+            return await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
+        })
 
         return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
     }
@@ -163,8 +166,11 @@ export class DPoPTokenProvider implements TokenProvider {
 
         let tokenResult: oauth.TokenEndpointResponse
         try {
-            const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token, options)
-            tokenResult = await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
+            tokenResult = await withDPoPNonceRetry(async () => {
+                const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token!, options)
+
+                return await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
+            })
         } catch (e) {
             await this.#cache.removeItem(issuer.href)
 

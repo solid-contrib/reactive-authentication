@@ -2,6 +2,7 @@ import * as oauth from "oauth4webapi"
 import { AuthorizationServer } from "oauth4webapi"
 import * as DPoP from "dpop"
 import type { TokenProvider } from "./TokenProvider.js"
+import { withDPoPNonceRetry } from "./dpopNonce.js"
 import { selectDPoPSigningAlgorithm } from "./selectDPoPSigningAlgorithm.js"
 
 export class ClientCredentialsTokenProvider implements TokenProvider {
@@ -50,13 +51,15 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
         const dpopKey = await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false})
         const dpop = oauth.DPoP({}, dpopKey)
 
-        const tokenResponse = await oauth.clientCredentialsGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer, clientRegistration), {scope: "webid"}, {
-            ...this.#options,
-            DPoP: dpop,
-            signal: request.signal
-        })
+        const tokenResult = await withDPoPNonceRetry(async () => {
+            const tokenResponse = await oauth.clientCredentialsGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer, clientRegistration), {scope: "webid"}, {
+                ...this.#options,
+                DPoP: dpop,
+                signal: request.signal
+            })
 
-        const tokenResult = await oauth.processClientCredentialsResponse(authorizationServer, clientRegistration, tokenResponse)
+            return await oauth.processClientCredentialsResponse(authorizationServer, clientRegistration, tokenResponse)
+        })
 
         const headers = new Headers(request.headers)
 
