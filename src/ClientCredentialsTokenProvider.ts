@@ -5,7 +5,10 @@ import type { TokenProvider } from "./TokenProvider.js"
 import { selectDPoPSigningAlgorithm } from "./selectDPoPSigningAlgorithm.js"
 
 export class ClientCredentialsTokenProvider implements TokenProvider {
-    constructor(private clientId: string, private clientSecret: string) {
+    readonly #options: oauth.HttpRequestOptions<string, any> | undefined
+
+    constructor(private clientId: string, private clientSecret: string, options?: oauth.HttpRequestOptions<string, any>) {
+        this.#options = options
     }
 
     async #getIssuer(request: Request): Promise<URL> {
@@ -37,6 +40,7 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
         const issuer = await this.#getIssuer(request)
 
         const discoveryResponse = await oauth.discoveryRequest(issuer, {
+            ...this.#options,
             signal: request.signal
         })
         const authorizationServer = await oauth.processDiscoveryResponse(issuer, discoveryResponse)
@@ -47,6 +51,7 @@ export class ClientCredentialsTokenProvider implements TokenProvider {
         const dpop = oauth.DPoP({}, dpopKey)
 
         const tokenResponse = await oauth.clientCredentialsGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer, clientRegistration), {scope: "webid"}, {
+            ...this.#options,
             DPoP: dpop,
             signal: request.signal
         })

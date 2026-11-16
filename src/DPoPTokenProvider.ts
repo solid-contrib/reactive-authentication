@@ -30,13 +30,15 @@ export class DPoPTokenProvider implements TokenProvider {
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
     readonly #issuerProvider: IssuerProvider
+    readonly #options: oauth.HttpRequestOptions<string, any> | undefined
 
-    constructor(callbackUri: string, codeProvider: CodeProvider, issuerProvider: IssuerProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider) {
+    constructor(callbackUri: string, codeProvider: CodeProvider, issuerProvider: IssuerProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider, options?: oauth.HttpRequestOptions<string, any>) {
         this.#codeProvider = codeProvider
         this.#callbackUri = callbackUri
         this.#asProvider = asProvider
         this.#clientProvider = clientProvider
         this.#issuerProvider = issuerProvider
+        this.#options = options
     }
 
     async matches(_: Request, challenges: readonly oauth.WWWAuthenticateChallenge[]): Promise<boolean> {
@@ -144,7 +146,7 @@ export class DPoPTokenProvider implements TokenProvider {
             }
         }
 
-        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {DPoP: dpop, signal: request.signal})
+        const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {...this.#options, DPoP: dpop, signal: request.signal})
 
         const tokenResult = await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
 
@@ -157,7 +159,7 @@ export class DPoPTokenProvider implements TokenProvider {
         }
 
         const dpop = oauth.DPoP({}, cached.dpopKey)
-        const options = {DPoP: dpop}
+        const options = {...this.#options, DPoP: dpop}
 
         let tokenResult: oauth.TokenEndpointResponse
         try {
