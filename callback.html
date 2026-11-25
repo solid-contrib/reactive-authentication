@@ -3,11 +3,10 @@
     <head>
         <meta charset="UTF-8">
         <title>Authorization Code callback</title>
-        <script>
-            const channel = new BroadcastChannel("reactive-authentication-callback")
-            channel.postMessage(location.href)
-            channel.close()
-            close()
+        <script type="module">
+            import { processAuthorizationResponse } from "./dist/AuthorizationCodeFlow.js"
+
+            processAuthorizationResponse()
         </script>
     </head>
     <body></body>
