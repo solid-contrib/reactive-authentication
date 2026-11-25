@@ -2,8 +2,29 @@ import { CodeRequestCancelledError } from "./CodeRequestCancelledError.js"
 import type { CodeProvider } from "./CodeProvider.js"
 
 const authorizationWindowName = "oidcAuthentication"
-const callbackChannelName = "reactive-authentication-callback"
 const onlyOnce = {once: true}
+const authorizationResponseChannelName = "reactive-authentication-callback"
+
+/**
+ * Processes the authorization response ({@link https://www.rfc-editor.org/rfc/rfc6749#section-4.1.2 RFC 6749 § 4.1.2}) at the redirection endpoint ({@link https://www.rfc-editor.org/rfc/rfc6749#section-3.1.2 RFC 6749 § 3.1.2}): sends the URL of the current page to {@link AuthorizationCodeFlow} and closes the window.
+ *
+ * Call it in the page at the callback URI. The page must have the same origin as the page that runs {@link AuthorizationCodeFlow}. The URL is sent on a `BroadcastChannel` and not with `opener.postMessage`, because the authorization window loses its opener when the login goes through a page that sends `Cross-Origin-Opener-Policy`.
+ *
+ * @example
+ * ```html
+ * <script type="module">
+ *   import {processAuthorizationResponse} from "@solid/reactive-authentication"
+ *
+ *   processAuthorizationResponse()
+ * </script>
+ * ```
+ */
+export function processAuthorizationResponse(): void {
+    const channel = new BroadcastChannel(authorizationResponseChannelName)
+    channel.postMessage(location.href)
+    channel.close()
+    close()
+}
 const html = `
 <style>
 </style>
@@ -186,7 +207,7 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
 
             this.#cancelCodeRequest = cancelCodeRequest
 
-            const channel = new BroadcastChannel(callbackChannelName)
+            const channel = new BroadcastChannel(authorizationResponseChannelName)
 
             const onMessage = (message: MessageEvent) => {
                 if (typeof message.data !== "string") {
