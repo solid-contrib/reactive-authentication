@@ -70,10 +70,10 @@ export class IdTokenSubjectTokenProvider implements SubjectTokenProvider {
         const issuer = await this.#issuerProvider.getIssuer(request)
 
         // One queue per issuer, so that a refresh token is never used twice.
-        const {idToken} = await navigator.locks.request(lockName(issuer), async _ =>
+        const {idToken, dpopKey} = await navigator.locks.request(lockName(issuer), async _ =>
             await this.getCachedEntry(issuer, signal))
 
-        return {token: idToken, type: idTokenType}
+        return {token: idToken, type: idTokenType, ...(dpopKey === undefined ? {} : {dpopKey})}
     }
 
     async invalidate(request: Request, subjectToken: SubjectToken): Promise<void> {

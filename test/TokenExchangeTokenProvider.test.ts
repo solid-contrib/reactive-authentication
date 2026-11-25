@@ -22,6 +22,7 @@ type Behavior = {
     matches?: boolean,
     target?: (request: Request) => TokenExchangeTarget,
     dpopAlgs?: string[],
+    boundKey?: CryptoKeyPair,
 }
 
 function setup(behavior: Behavior = {}) {
@@ -55,7 +56,7 @@ function setup(behavior: Behavior = {}) {
     }
     const subjectTokenProvider: SubjectTokenProvider = {
         async getSubjectToken() {
-            return {token: `subject-${++subjectCounter}`, type: "urn:ietf:params:oauth:token-type:id_token"}
+            return {token: `subject-${++subjectCounter}`, type: "urn:ietf:params:oauth:token-type:id_token", ...(behavior.boundKey && {dpopKey: behavior.boundKey})}
         },
         async invalidate(_, subjectToken) {
             invalidated.push(subjectToken)
@@ -240,6 +241,20 @@ describe("TokenExchangeTokenProvider", () => {
                 await provider.upgrade(request(), unauthorized())
 
                 assert.equal(tokenRequests[0]!.headers.has("DPoP"), false)
+            })
+
+            it("signs the token request and the presentation with the key the subject token is bound to", async () => {
+                const boundKey = await oauth.generateKeyPair("ES256")
+                const boundJwk = await crypto.subtle.exportKey("jwk", boundKey.publicKey)
+                const {provider, tokenRequests} = setup({boundKey, tokenType: "DPoP"})
+
+                const upgraded = await provider.upgrade(request(), unauthorized())
+
+                for (const proof of [tokenRequests[0]!.headers.get("DPoP")!, upgraded.headers.get("DPoP")!]) {
+                    const {jwk} = decode(proof).header
+                    assert.equal(jwk.x, boundJwk.x)
+                    assert.equal(jwk.y, boundJwk.y)
+                }
             })
 
             it("presents a DPoP token with a proof bound to the token and the request", async () => {
