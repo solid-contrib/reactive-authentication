@@ -2,6 +2,7 @@ import { CodeRequestCancelledError } from "./CodeRequestCancelledError.js"
 import type { CodeProvider } from "./CodeProvider.js"
 
 const authorizationWindowName = "oidcAuthentication"
+const callbackChannelName = "reactive-authentication-callback"
 const onlyOnce = {once: true}
 const html = `
 <style>
@@ -185,19 +186,21 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
 
             this.#cancelCodeRequest = cancelCodeRequest
 
+            const channel = new BroadcastChannel(callbackChannelName)
+
             const onMessage = (message: MessageEvent) => {
-                if (message.source !== this.#authorizationWindow) {
+                if (typeof message.data !== "string") {
                     return
                 }
 
-                this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
+                channel.close()
                 signal.removeEventListener("abort", onAbort)
                 this.#switchModal.close()
                 respondWithCode(message.data)
             }
 
             const onAbort = () => {
-                this.ownerDocument.defaultView?.removeEventListener("message", onMessage)
+                channel.close()
                 this.#newModal.close()
                 this.#switchModal.close()
                 this.#authorizationWindow?.close()
@@ -205,7 +208,7 @@ export class AuthorizationCodeFlow extends HTMLElement implements CodeProvider {
             }
 
             signal.addEventListener("abort", onAbort, onlyOnce)
-            this.ownerDocument.defaultView?.addEventListener("message", onMessage)
+            channel.addEventListener("message", onMessage)
 
             this.#openAuthorizationWindow()
 
