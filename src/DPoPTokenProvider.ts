@@ -11,7 +11,11 @@ import type { Cache } from "./Cache.js"
 import { MemoryCache } from "./MemoryCache.js"
 import type { IssuerProvider } from "./IssuerProvider.js"
 
-type CacheEntry = {
+/**
+ * What {@link DPoPTokenProvider} caches for each key: the token response, its DPoP key pair, and the client and
+ * authorization server they were obtained from.
+ */
+export type DPoPTokenCacheEntry = {
     created: number,
     tokenResult: oauth.TokenEndpointResponse,
     dpopKey: CryptoKeyPair,
@@ -25,21 +29,27 @@ export class DPoPTokenProvider implements TokenProvider {
 
     // Keyed by issuer. This assumes Solid-OIDC access tokens (aud "solid"), which are valid at any resource server that trusts the issuer.
     // TODO: Request-specific access tokens (e.g. UMA RPTs, audience-restricted tokens per RFC 8707) require further work: they must not be shared across resources by issuer.
-    // TODO: Take cache from caller
-    // TODO: Once cache is externalized, document that it should not be shared between clients (which would lead to impersonation)
-    readonly #cache: Cache<CacheEntry> = new MemoryCache
+    readonly #cache: Cache<DPoPTokenCacheEntry>
     readonly #asProvider: AuthorizationServerProvider
     readonly #clientProvider: ClientProvider
     readonly #issuerProvider: IssuerProvider
     readonly #options: oauth.HttpRequestOptions<string, any> | undefined
 
-    constructor(callbackUri: string, codeProvider: CodeProvider, issuerProvider: IssuerProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider, options?: oauth.HttpRequestOptions<string, any>) {
+    /**
+     * @param options HTTP options for requests to the authorization server, for example to allow plain HTTP (see `allowInsecureRequests`).
+     * @param cache Where tokens, refresh tokens and DPoP key pairs are kept, keyed by issuer. Defaults to a new
+     * {@link MemoryCache} owned by this instance. Never share one cache between clients or users: an entry is a usable
+     * credential, so a shared cache lets one client act as another. A persistent cache must hold non-extractable
+     * `CryptoKeyPair`s, so use structured storage such as IndexedDB, never `localStorage` or `sessionStorage`.
+     */
+    constructor(callbackUri: string, codeProvider: CodeProvider, issuerProvider: IssuerProvider, asProvider: AuthorizationServerProvider, clientProvider: ClientProvider, options?: oauth.HttpRequestOptions<string, any>, cache: Cache<DPoPTokenCacheEntry> = new MemoryCache) {
         this.#codeProvider = codeProvider
         this.#callbackUri = callbackUri
         this.#asProvider = asProvider
         this.#clientProvider = clientProvider
         this.#issuerProvider = issuerProvider
         this.#options = options
+        this.#cache = cache
     }
 
     async matches(_: Request, challenges: readonly oauth.WWWAuthenticateChallenge[]): Promise<boolean> {
@@ -63,7 +73,7 @@ export class DPoPTokenProvider implements TokenProvider {
         return new Request(request, {headers})
     }
 
-    private async getCachedToken(request: Request, issuer: URL): Promise<CacheEntry> {
+    private async getCachedToken(request: Request, issuer: URL): Promise<DPoPTokenCacheEntry> {
         const cached = await this.#cache.getItem(issuer.href)
 
         // TODO: Support actively refreshing the token
@@ -85,7 +95,7 @@ export class DPoPTokenProvider implements TokenProvider {
         return fresh
     }
 
-    private async obtainToken(request: Request, issuer: URL): Promise<CacheEntry> {
+    private async obtainToken(request: Request, issuer: URL): Promise<DPoPTokenCacheEntry> {
         const authorizationServer = await this.#asProvider.getAuthorizationServer(issuer, request.signal)
 
         const clientRegistration = await this.#clientProvider.getClient(authorizationServer, this.#callbackUri, request.signal)
@@ -156,7 +166,7 @@ export class DPoPTokenProvider implements TokenProvider {
         return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
     }
 
-    private async refreshToken(cached: CacheEntry, issuer: URL): Promise<CacheEntry | undefined> {
+    private async refreshToken(cached: DPoPTokenCacheEntry, issuer: URL): Promise<DPoPTokenCacheEntry | undefined> {
         if (cached.tokenResult.refresh_token === undefined) {
             return undefined
         }
@@ -254,7 +264,7 @@ function clientSecretBasicFor(issuer: string): (clientSecret: string) => oauth.C
     return oauth.ClientSecretBasic
 }
 
-function isExpired(tokenData: CacheEntry) {
+function isExpired(tokenData: DPoPTokenCacheEntry) {
     // TODO: Add some headroom (expire a bit before limit)
     // TODO: What to do when `expires_in` is Missing? (optional in https://datatracker.ietf.org/doc/html/rfc6749#section-4.2.2)
     return Date.now() - tokenData.created > tokenData.tokenResult.expires_in! * 1_000;
