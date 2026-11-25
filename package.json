@@ -35,10 +35,12 @@
     "oauth4webapi": "^3",
     "dpop": "^2",
     "@rdfjs/wrapper": "^0.34",
-    "n3": "^2"
+    "n3": "^2",
+    "http-link-header": "^1"
   },
   "devDependencies": {
     "@rdfjs/types": "^2",
+    "@types/http-link-header": "^1",
     "@types/n3": "^1",
     "typedoc": "^0.28.18",
     "typedoc-plugin-mdn-links": "^5.1.1",
