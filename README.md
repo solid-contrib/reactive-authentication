@@ -70,8 +70,8 @@ The first supported algorithm in the order ES256, EdDSA, PS256, RS256 is used. I
 
 ### Provider matching
 
-When a response has status `401`, the manager parses its `WWW-Authenticate` challenges and gives them to `matches` of each provider, in the order of the list.
-The first provider that matches upgrades the request.
+When a response has status `401`, the manager gives the request and the response to `matches` of each provider, in the order of the list.
+The first provider that matches upgrades the request. It gets the same request and response in `upgrade`. A provider that needs the challenges parses the `WWW-Authenticate` header of the response.
 
 | Provider                         | Matches when a challenge has scheme |
 |----------------------------------|-------------------------------------|
