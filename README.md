@@ -151,6 +151,12 @@ const manager = new ReactiveFetchManager([lws, dpopTokenProvider])
 
 The LWS code uses the runtime dependency `http-link-header`. In a browser without a bundler, add it to the import map, for example `"http-link-header": "https://esm.sh/http-link-header@1.1.4"`.
 
+When the ID token is bound to a DPoP key (a `cnf` claim), the token exchange request is signed with that key. Inrupt ESS also requires an `ath` claim with the hash of the subject token in that proof, which no specification defines. Pass `essDPoPAdapter` as the last argument for ESS:
+
+```js
+const lws = new TokenExchangeTokenProvider(targetProvider, idTokens, asProvider, undefined, undefined, essDPoPAdapter)
+```
+
 ## Run the demo
 
 To compile,

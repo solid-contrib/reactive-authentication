@@ -32,7 +32,8 @@
                 TokenExchangeTokenProvider,
                 LwsTokenExchangeTargetProvider,
                 LwsStorageRootProvider,
-                CachingStorageRootProvider
+                CachingStorageRootProvider,
+                essDPoPAdapter
             } from "./dist/mod.js"
             import "./dist/registerElements.js"
 
@@ -70,7 +71,7 @@
             }
             const lwsASProvider = new CachingAuthorizationServerProvider(new FallbackAuthorizationServerProvider(new LwsDiscoveryAuthorizationServerProvider, new DiscoveryAuthorizationServerProvider(undefined, "oauth2")))
             const idTokenProvider = new IdTokenSubjectTokenProvider(callbackUri, ui, lwsIssuerProvider, cachingASProvider, cachingClientProvider)
-            const lwsTokenProvider = new TokenExchangeTokenProvider(new LwsTokenExchangeTargetProvider(new CachingStorageRootProvider(new LwsStorageRootProvider)), idTokenProvider, lwsASProvider)
+            const lwsTokenProvider = new TokenExchangeTokenProvider(new LwsTokenExchangeTargetProvider(new CachingStorageRootProvider(new LwsStorageRootProvider)), idTokenProvider, lwsASProvider, undefined, undefined, essDPoPAdapter)
 
             const fetch = new ReactiveFetchManager([lwsTokenProvider, dPoPTokenProvider]).fetch
 
