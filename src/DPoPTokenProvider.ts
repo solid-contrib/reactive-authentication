@@ -1,4 +1,5 @@
 import * as oauth from "oauth4webapi"
+import { parseChallenges } from "./parseChallenges.js"
 import * as DPoP from "dpop"
 import type { CodeProvider } from "./CodeProvider.js"
 import type { TokenProvider } from "./TokenProvider.js"
@@ -52,9 +53,9 @@ export class DPoPTokenProvider implements TokenProvider {
         this.#cache = cache
     }
 
-    async matches(_: Request, challenges: readonly oauth.WWWAuthenticateChallenge[]): Promise<boolean> {
+    async matches(_: Request, response: Response): Promise<boolean> {
         // Servers (CSS, NSS) advertise only Bearer but accept DPoP-bound tokens, which RFC 9449 §7.1 permits
-        return challenges.some(({scheme}) => scheme === "dpop" || scheme === "bearer")
+        return parseChallenges(response.headers.get("WWW-Authenticate")).some(({scheme}) => scheme === "dpop" || scheme === "bearer")
     }
 
     async upgrade(request: Request): Promise<Request> {
