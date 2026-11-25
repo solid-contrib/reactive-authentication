@@ -26,7 +26,9 @@
     "url": "git+https://github.com/solid-contrib/reactive-authentication.git"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "build:test": "node -e \"fs.rmSync('dist-test', {recursive: true, force: true})\" && tsc -p tsconfig.test.json",
+    "test": "npm run build:test && node --test \"dist-test/test/**/*.test.js\""
   },
   "license": "MIT",
   "dependencies": {

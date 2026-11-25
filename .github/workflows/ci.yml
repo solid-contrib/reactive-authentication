@@ -30,6 +30,7 @@ jobs:
           node-version-file: .nvmrc
       - run: npm i
       - run: npx tsc
+      - run: npm test
 
   summary:
     if: always()
