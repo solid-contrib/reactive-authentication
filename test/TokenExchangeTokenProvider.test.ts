@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import {createHash} from "node:crypto"
 import {describe, it} from "node:test"
 import * as oauth from "oauth4webapi"
 import type {AuthorizationServerProvider} from "../src/AuthorizationServerProvider.js"
@@ -20,6 +21,7 @@ type Behavior = {
     tokenType?: string,
     matches?: boolean,
     target?: (request: Request) => TokenExchangeTarget,
+    dpopAlgs?: string[],
 }
 
 function setup(behavior: Behavior = {}) {
@@ -61,7 +63,7 @@ function setup(behavior: Behavior = {}) {
     }
     const asProvider: AuthorizationServerProvider = {
         async getAuthorizationServer(i) {
-            return {issuer: i.href, token_endpoint: tokenEndpoint}
+            return {issuer: i.href, token_endpoint: tokenEndpoint, ...(behavior.dpopAlgs && {dpop_signing_alg_values_supported: behavior.dpopAlgs})}
         },
     }
 
@@ -115,7 +117,13 @@ describe("TokenExchangeTokenProvider", () => {
             assert.equal(upgraded.headers.get("Authorization"), "Bearer access-1")
         })
 
-        it("rejects a token type other than Bearer", async () => {
+        it("rejects an unknown token type", async () => {
+            const {provider} = setup({tokenType: "MAC", dpopAlgs: ["ES256"]})
+
+            await assert.rejects(provider.upgrade(request(), unauthorized()), oauth.UnsupportedOperationError)
+        })
+
+        it("rejects a DPoP token type when the request had no DPoP", async () => {
             const {provider} = setup({tokenType: "DPoP"})
 
             await assert.rejects(provider.upgrade(request(), unauthorized()), ReactiveAuthenticationError)
@@ -206,6 +214,84 @@ describe("TokenExchangeTokenProvider", () => {
             await assert.rejects(provider.upgrade(request(), unauthorized()), oauth.ResponseBodyError)
             assert.equal(tokenRequests.length, 1)
             assert.equal(invalidated.length, 0)
+        })
+
+        describe("DPoP", () => {
+            const decode = (jwt: string) => ({
+                header: JSON.parse(Buffer.from(jwt.split(".")[0]!, "base64url").toString()),
+                payload: JSON.parse(Buffer.from(jwt.split(".")[1]!, "base64url").toString()),
+            })
+            const nonceDemand = () => Response.json({error: "use_dpop_nonce"}, {status: 400, headers: {"DPoP-Nonce": "nonce-1"}})
+
+            it("sends a DPoP proof with the token request when the server advertises DPoP", async () => {
+                const {provider, tokenRequests} = setup({dpopAlgs: ["ES256"]})
+
+                await provider.upgrade(request(), unauthorized())
+
+                const {header, payload} = decode(tokenRequests[0]!.headers.get("DPoP")!)
+                assert.equal(header.typ, "dpop+jwt")
+                assert.equal(payload.htm, "POST")
+                assert.equal(payload.htu, tokenEndpoint)
+            })
+
+            it("sends no DPoP proof when the server does not advertise DPoP", async () => {
+                const {provider, tokenRequests} = setup()
+
+                await provider.upgrade(request(), unauthorized())
+
+                assert.equal(tokenRequests[0]!.headers.has("DPoP"), false)
+            })
+
+            it("presents a DPoP token with a proof bound to the token and the request", async () => {
+                const {provider} = setup({dpopAlgs: ["ES256"], tokenType: "DPoP"})
+
+                const upgraded = await provider.upgrade(new Request(requested, {method: "PUT"}), unauthorized())
+
+                assert.equal(upgraded.headers.get("Authorization"), "DPoP access-1")
+                const {payload} = decode(upgraded.headers.get("DPoP")!)
+                assert.equal(payload.htm, "PUT")
+                assert.equal(payload.htu, requested)
+                assert.equal(payload.ath, createHash("sha256").update("access-1").digest("base64url"))
+            })
+
+            it("presents a Bearer token without a proof when the server returns Bearer", async () => {
+                const {provider} = setup({dpopAlgs: ["ES256"], tokenType: "Bearer"})
+
+                const upgraded = await provider.upgrade(request(), unauthorized())
+
+                assert.equal(upgraded.headers.get("Authorization"), "Bearer access-1")
+                assert.equal(upgraded.headers.has("DPoP"), false)
+            })
+
+            it("retries once with the nonce when the server demands one", async () => {
+                const {provider, tokenRequests, invalidated} = setup({dpopAlgs: ["ES256"], tokenType: "DPoP", tokenResponses: [nonceDemand]})
+
+                await provider.upgrade(request(), unauthorized())
+
+                assert.equal(tokenRequests.length, 2)
+                assert.equal(decode(tokenRequests[0]!.headers.get("DPoP")!).payload.nonce, undefined)
+                assert.equal(decode(tokenRequests[1]!.headers.get("DPoP")!).payload.nonce, "nonce-1")
+                assert.equal(invalidated.length, 0)
+            })
+
+            it("does not retry a second nonce demand", async () => {
+                const {provider, tokenRequests} = setup({dpopAlgs: ["ES256"], tokenResponses: [nonceDemand, nonceDemand]})
+
+                await assert.rejects(provider.upgrade(request(), unauthorized()))
+                assert.equal(tokenRequests.length, 2)
+            })
+
+            it("reuses a cached DPoP token with a new proof for each request", async () => {
+                const {provider, tokenRequests} = setup({dpopAlgs: ["ES256"], tokenType: "DPoP"})
+
+                const first = await provider.upgrade(request(), unauthorized())
+                const second = await provider.upgrade(request(`${resource}/other.txt`), unauthorized())
+
+                assert.equal(tokenRequests.length, 1)
+                assert.equal(second.headers.get("Authorization"), "DPoP access-1")
+                assert.notEqual(second.headers.get("DPoP"), first.headers.get("DPoP"))
+                assert.equal(decode(second.headers.get("DPoP")!).payload.htu, `${resource}/other.txt`)
+            })
         })
 
         it("propagates a failure to find the target", async () => {
