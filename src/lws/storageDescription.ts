@@ -91,7 +91,7 @@ function isStorageRootService(value: unknown): value is Record<string, unknown> 
 }
 
 /**
- * Requests the storage description with {@link fetchStorageRoot}.
+ * Requests the storage description with `fetchStorageRoot`.
  */
 export class LwsStorageRootProvider implements StorageRootProvider {
     readonly #options: oauth.HttpRequestOptions<string, any> | undefined

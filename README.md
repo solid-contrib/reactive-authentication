@@ -78,6 +78,7 @@ The first provider that matches upgrades the request. It gets the same request a
 | `DPoPTokenProvider`              | `DPoP` or `Bearer`                  |
 | `ClientCredentialsTokenProvider` | `DPoP` or `Bearer`                  |
 | `BearerTokenProvider`            | `Bearer`                            |
+| `TokenExchangeTokenProvider`     | `DPoP` or `Bearer`, with `resource_metadata`, or with `as_uri` and `realm` (with `LwsTokenExchangeTargetProvider`) |
 
 No provider matches when the header is missing, cannot be parsed or is not exposed to the browser by CORS.
 Several providers can match the same response, so put the more specific provider earlier in the list.
@@ -109,6 +110,46 @@ Points to watch:
 - Cached values are the library's own objects. Use a store that keeps them as they are (memory, IndexedDB) or wrap a string store with a codec (Key Value Kit's `withCodec`). The issuer cache holds `URL` objects, which IndexedDB cannot store, so it needs a codec.
 - The `DPoPTokenProvider` cache holds access tokens, refresh tokens and non-extractable DPoP key pairs. Never share it between clients or users, and never put it in `localStorage` or `sessionStorage`.
 - A cache does not coordinate between tabs. `DPoPTokenProvider` uses a Web Lock so a refresh token is not used twice.
+
+### Linked Web Storage (LWS)
+
+`TokenExchangeTokenProvider` authenticates to storages that follow [LWS10-OAUTH](https://w3c.github.io/lws-protocol/lws10-oauth/). The flow is:
+
+1. The storage answers a request with `401` and a challenge that has a `resource_metadata` parameter.
+2. `LwsTokenExchangeTargetProvider` fetches the protected resource metadata. It checks the metadata, the storage `Link` header and the storage description, and finds the issuer of the authorization server and the resource.
+3. `LwsDiscoveryAuthorizationServerProvider` fetches the authorization server metadata from `/.well-known/lws-configuration`.
+4. `TokenExchangeTokenProvider` exchanges a subject token for an access token ([RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html)). `IdTokenSubjectTokenProvider` provides an ID token as the subject token, with the Authorization Code flow.
+5. The access token is presented as `Bearer`, or as `DPoP` when the authorization server returns a `DPoP` token.
+
+A challenge with `as_uri` and `realm` and no `resource_metadata` (the legacy challenge) also matches. Then `as_uri` is the issuer and `realm` is the resource.
+
+Some servers, for example Inrupt ESS, have no `/.well-known/lws-configuration` and answer `404`. `FallbackAuthorizationServerProvider` then uses the metadata of RFC 8414 (`DiscoveryAuthorizationServerProvider` with `"oauth2"`).
+
+```js
+import {
+    CachingAuthorizationServerProvider,
+    CachingStorageRootProvider,
+    DiscoveryAuthorizationServerProvider,
+    FallbackAuthorizationServerProvider,
+    IdTokenSubjectTokenProvider,
+    LwsDiscoveryAuthorizationServerProvider,
+    LwsStorageRootProvider,
+    LwsTokenExchangeTargetProvider,
+    ReactiveFetchManager,
+    TokenExchangeTokenProvider
+} from "@solid/reactive-authentication"
+
+const asProvider = new CachingAuthorizationServerProvider(new FallbackAuthorizationServerProvider(new LwsDiscoveryAuthorizationServerProvider(), new DiscoveryAuthorizationServerProvider(undefined, "oauth2")))
+const idTokens = new IdTokenSubjectTokenProvider(callbackUri, codeProvider, issuerProvider, opProvider, clientProvider)
+const lws = new TokenExchangeTokenProvider(new LwsTokenExchangeTargetProvider(new CachingStorageRootProvider(new LwsStorageRootProvider())), idTokens, asProvider)
+const manager = new ReactiveFetchManager([lws, dpopTokenProvider])
+```
+
+`opProvider` discovers the metadata of the OpenID Provider that issues the ID token (for example `DiscoveryAuthorizationServerProvider` with its default OIDC discovery). It is not the same instance as `asProvider`, which discovers the authorization server that does the token exchange.
+
+`TokenExchangeTokenProvider` must come before `DPoPTokenProvider` in the list, because `DPoPTokenProvider` matches any `Bearer` challenge, also an LWS challenge.
+
+The LWS code uses the runtime dependency `http-link-header`. In a browser without a bundler, add it to the import map, for example `"http-link-header": "https://esm.sh/http-link-header@1.1.4"`.
 
 ## Run the demo
 

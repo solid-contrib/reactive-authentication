@@ -9,7 +9,7 @@ import type {StorageRootProvider} from "./storageDescription.js"
 /**
  * Finds the authorization server and the storage of a request from its 401 response, as defined in {@link https://w3c.github.io/lws-protocol/lws10-oauth/#authorization-server-discovery LWS10-OAUTH Authorization Server Discovery}.
  *
- * The current discovery, with the `resource_metadata` challenge parameter, is used when the challenge has it ({@link discoverProtectedResource}). Otherwise the legacy `as_uri` and `realm` challenge of {@link https://www.w3.org/TR/2026/WD-lws10-core-20260331/#x5-2-1-authorization-server-discovery LWS 1.0 Core § 5.2.1 Authorization Server Discovery} is used, and the `realm` is the `resource`. A challenge with `resource_metadata` never falls back to the legacy challenge.
+ * The current discovery, with the `resource_metadata` challenge parameter, is used when the challenge has it (`discoverProtectedResource`). Otherwise the legacy `as_uri` and `realm` challenge of {@link https://www.w3.org/TR/2026/WD-lws10-core-20260331/#x5-2-1-authorization-server-discovery LWS 1.0 Core § 5.2.1 Authorization Server Discovery} is used, and the `realm` is the `resource`. A challenge with `resource_metadata` never falls back to the legacy challenge.
  */
 export class LwsTokenExchangeTargetProvider implements TokenExchangeTargetProvider {
     readonly #storageRootProvider: StorageRootProvider
