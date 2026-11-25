@@ -35,11 +35,12 @@ export type TokenExchangeCacheEntry = {
  *
  * Access tokens are cached for each authorization server and resource until they expire. A response without `expires_in` counts as expired at once. A token exchange has no refresh token, so an expired access token is replaced with a new token exchange. If the authorization server rejects a token exchange with `invalid_grant` or `invalid_token`, for example because the subject token expired, the {@link SubjectTokenProvider} discards the subject token and the exchange runs once more with a new one.
  *
- * The token request carries a DPoP proof ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-5 RFC 9449 § 5}) when the authorization server advertises `dpop_signing_alg_values_supported`, and is a plain request otherwise. If the authorization server demands a nonce, the request runs once more with it ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-8 RFC 9449 § 8}). The `token_type` of the response, in any case, decides how the access token is presented. `DPoP` sends `Authorization: DPoP` and a new proof for each request, bound to the access token ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-7.1 RFC 9449 § 7.1}). `Bearer` sends `Authorization: Bearer`, also when the request had a DPoP proof. Any other type is an error (`oauth.UnsupportedOperationError`).
+ * The token request carries a DPoP proof ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-5 RFC 9449 § 5}) signed with the key that the subject token is bound to, if it is bound. Otherwise it carries a proof with a new key when the authorization server advertises `dpop_signing_alg_values_supported`, and is a plain request when it does not. If the authorization server demands a nonce, the request runs once more with it ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-8 RFC 9449 § 8}). The `token_type` of the response, in any case, decides how the access token is presented. `DPoP` sends `Authorization: DPoP` and a new proof for each request, bound to the access token ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-7.1 RFC 9449 § 7.1}). `Bearer` sends `Authorization: Bearer`, also when the request had a DPoP proof. Any other type is an error (`oauth.UnsupportedOperationError`).
  *
  * A persistent cache must hold non-extractable `CryptoKeyPair`s, so use structured storage such as IndexedDB, never `localStorage` or `sessionStorage`.
  *
  * @see {@link https://w3c.github.io/lws-protocol/lws10-oauth/#authorization-token-exchange LWS10-OAUTH Token Exchange}, which uses this exchange.
+ * @see {@link https://solidproject.org/TR/oidc#dpop-validation Solid-OIDC § 9.3 DPoP Validation}, which requires a DPoP proof when a DPoP-bound ID token is exchanged.
  */
 export class TokenExchangeTokenProvider implements TokenProvider {
     readonly #targetProvider: TokenExchangeTargetProvider
@@ -119,9 +120,9 @@ export class TokenExchangeTokenProvider implements TokenProvider {
 
     async #sendExchange(authorizationServer: oauth.AuthorizationServer, resource: string, subjectToken: SubjectToken, signal: AbortSignal): Promise<TokenExchangeCacheEntry> {
         // No key when the authorization server does not advertise DPoP, so that DPoP is not offered to one that cannot handle it.
-        const dpopKey = authorizationServer.dpop_signing_alg_values_supported === undefined
+        const dpopKey = subjectToken.dpopKey ?? (authorizationServer.dpop_signing_alg_values_supported === undefined
             ? undefined
-            : await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false})
+            : await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false}))
         const dpop = dpopKey && oauth.DPoP(anonymousClient, dpopKey)
 
         const result = await withDPoPNonceRetry(async () => {

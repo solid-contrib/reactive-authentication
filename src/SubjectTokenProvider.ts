@@ -13,6 +13,13 @@ export interface SubjectToken {
      * The `subject_token_type`, a token type URI as defined in {@link https://www.rfc-editor.org/rfc/rfc8693#section-3 RFC 8693 § 3 Token Type Identifiers}.
      */
     type: string
+
+    /**
+     * The key pair that the subject token is bound to ({@link https://www.rfc-editor.org/rfc/rfc9449.html RFC 9449}), if any. The token request of the exchange is then signed with it.
+     *
+     * @see {@link https://solidproject.org/TR/oidc#tokens-id Solid-OIDC § 8.1 DPoP-bound OIDC ID Token}, which binds the ID token to a DPoP key with the `cnf` claim.
+     */
+    dpopKey?: CryptoKeyPair
 }
 
 /**

@@ -205,6 +205,25 @@ describe("IdTokenSubjectTokenProvider", () => {
         assert.ok(s.tokenRequests[0]!.headers.get("DPoP"))
     })
 
+    it("returns the DPoP key that the ID token is bound to", async () => {
+        const s = setup({dpopAlgs: ["ES256"]})
+
+        const subjectToken = await s.provider.getSubjectToken(request, signal)
+
+        const proofJwk = JSON.parse(Buffer.from(s.tokenRequests[0]!.headers.get("DPoP")!.split(".")[0]!, "base64url").toString()).jwk
+        const keyJwk = await crypto.subtle.exportKey("jwk", subjectToken.dpopKey!.publicKey)
+        assert.equal(keyJwk.x, proofJwk.x)
+        assert.equal(keyJwk.y, proofJwk.y)
+    })
+
+    it("returns no DPoP key without DPoP", async () => {
+        const s = setup()
+
+        const subjectToken = await s.provider.getSubjectToken(request, signal)
+
+        assert.equal(subjectToken.dpopKey, undefined)
+    })
+
     it("reuses the DPoP key to refresh", async () => {
         const s = setup({dpopAlgs: ["ES256"], exp: now() + 10})
 
