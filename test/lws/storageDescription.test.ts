@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import {describe, it} from "node:test"
 import * as oauth from "oauth4webapi"
-import {CachingStorageRootProvider, fetchStorageRoot, LwsStorageRootProvider} from "../src/storageDescription.js"
-import {ReactiveAuthenticationError} from "../src/ReactiveAuthenticationError.js"
+import {CachingStorageRootProvider, fetchStorageRoot, LwsStorageRootProvider} from "../../src/lws/storageDescription.js"
+import {ReactiveAuthenticationError} from "../../src/ReactiveAuthenticationError.js"
 
 type Call = { url: string, init: RequestInit | undefined }
 

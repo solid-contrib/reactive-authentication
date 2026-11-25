@@ -1,5 +1,5 @@
 import * as oauth from "oauth4webapi"
-import type {AuthorizationServerProvider} from "./AuthorizationServerProvider.js"
+import type {AuthorizationServerProvider} from "../AuthorizationServerProvider.js"
 
 /**
  * Discovers authorization server metadata at the `/.well-known/lws-configuration` path as defined in {@link https://w3c.github.io/lws-protocol/lws10-oauth/#authorization-server-metadata LWS10-OAUTH Authorization Server Metadata}. {@link https://www.w3.org/TR/lws10-core/#x4-authentication-and-authorization LWS 1.0 Core § 4} defers authorization to LWS10-OAUTH.

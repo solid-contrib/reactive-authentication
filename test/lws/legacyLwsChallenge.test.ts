@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import {describe, it} from "node:test"
-import {findLegacyLwsChallenge, isWithinRealm} from "../src/legacyLwsChallenge.js"
-import {parseChallenges} from "../src/parseChallenges.js"
+import {findLegacyLwsChallenge, isWithinRealm} from "../../src/lws/legacyLwsChallenge.js"
+import {parseChallenges} from "../../src/parseChallenges.js"
 
 describe("findLegacyLwsChallenge", () => {
     it("finds an ESS-style challenge with an origin realm", () => {

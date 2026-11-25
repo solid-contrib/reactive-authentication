@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import {describe, it} from "node:test"
 import * as oauth from "oauth4webapi"
-import {LwsDiscoveryAuthorizationServerProvider} from "../src/LwsDiscoveryAuthorizationServerProvider.js"
+import {LwsDiscoveryAuthorizationServerProvider} from "../../src/lws/LwsDiscoveryAuthorizationServerProvider.js"
 
 type Call = { url: string, init: RequestInit | undefined }
 

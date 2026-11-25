@@ -1,7 +1,7 @@
 import * as oauth from "oauth4webapi"
-import type {Cache} from "./Cache.js"
-import {MemoryCache} from "./MemoryCache.js"
-import {ReactiveAuthenticationError} from "./ReactiveAuthenticationError.js"
+import type {Cache} from "../Cache.js"
+import {MemoryCache} from "../MemoryCache.js"
+import {ReactiveAuthenticationError} from "../ReactiveAuthenticationError.js"
 
 const cidContext = "https://www.w3.org/ns/cid/v1"
 const lwsContext = "https://www.w3.org/ns/lws/v1"
