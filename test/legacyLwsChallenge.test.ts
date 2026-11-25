@@ -1,50 +1,50 @@
 import assert from "node:assert/strict"
 import {describe, it} from "node:test"
-import {findLwsChallenge, isWithinRealm} from "../src/lwsChallenge.js"
+import {findLegacyLwsChallenge, isWithinRealm} from "../src/legacyLwsChallenge.js"
 import {parseChallenges} from "../src/parseChallenges.js"
 
-describe("findLwsChallenge", () => {
+describe("findLegacyLwsChallenge", () => {
     it("finds an ESS-style challenge with an origin realm", () => {
-        const result = findLwsChallenge(parseChallenges('Bearer realm="https://storage.odi.ess.solid-experiments.org", as_uri="https://platform.odi.ess.solid-experiments.org"'))
+        const result = findLegacyLwsChallenge(parseChallenges('Bearer realm="https://storage.odi.ess.solid-experiments.org", as_uri="https://platform.odi.ess.solid-experiments.org"'))
         assert.equal(result?.realm, "https://storage.odi.ess.solid-experiments.org")
         assert.equal(result?.asUri, "https://platform.odi.ess.solid-experiments.org")
     })
 
     it("finds the specification example", () => {
-        const result = findLwsChallenge(parseChallenges('Bearer as_uri="https://authorization.example", realm="https://storage.example/storage_1", error="invalid_token"'))
+        const result = findLegacyLwsChallenge(parseChallenges('Bearer as_uri="https://authorization.example", realm="https://storage.example/storage_1", error="invalid_token"'))
         assert.equal(result?.asUri, "https://authorization.example")
         assert.equal(result?.realm, "https://storage.example/storage_1")
     })
 
     it("returns undefined without as_uri", () => {
-        assert.equal(findLwsChallenge(parseChallenges('Bearer realm="https://storage.example"')), undefined)
+        assert.equal(findLegacyLwsChallenge(parseChallenges('Bearer realm="https://storage.example"')), undefined)
     })
 
     it("returns undefined without realm", () => {
-        assert.equal(findLwsChallenge(parseChallenges('Bearer as_uri="https://as.example"')), undefined)
+        assert.equal(findLegacyLwsChallenge(parseChallenges('Bearer as_uri="https://as.example"')), undefined)
     })
 
     it("returns undefined for values that are not URLs", () => {
-        assert.equal(findLwsChallenge(parseChallenges('Bearer realm="storage", as_uri="as"')), undefined)
+        assert.equal(findLegacyLwsChallenge(parseChallenges('Bearer realm="storage", as_uri="as"')), undefined)
     })
 
     it("skips an invalid challenge and finds a later valid one", () => {
-        const result = findLwsChallenge(parseChallenges('Bearer realm="storage", as_uri="as", DPoP realm="https://storage.example", as_uri="https://as.example"'))
+        const result = findLegacyLwsChallenge(parseChallenges('Bearer realm="storage", as_uri="as", DPoP realm="https://storage.example", as_uri="https://as.example"'))
         assert.equal(result?.asUri, "https://as.example")
         assert.equal(result?.realm, "https://storage.example")
     })
 
     it("matches the scheme case-insensitively", () => {
-        const result = findLwsChallenge(parseChallenges('DPoP realm="https://storage.example", as_uri="https://as.example"'))
+        const result = findLegacyLwsChallenge(parseChallenges('DPoP realm="https://storage.example", as_uri="https://as.example"'))
         assert.equal(result?.asUri, "https://as.example")
     })
 
     it("ignores other schemes", () => {
-        assert.equal(findLwsChallenge(parseChallenges('Basic realm="https://storage.example", as_uri="https://as.example"')), undefined)
+        assert.equal(findLegacyLwsChallenge(parseChallenges('Basic realm="https://storage.example", as_uri="https://as.example"')), undefined)
     })
 
     it("returns undefined for no challenges", () => {
-        assert.equal(findLwsChallenge([]), undefined)
+        assert.equal(findLegacyLwsChallenge([]), undefined)
     })
 })
 

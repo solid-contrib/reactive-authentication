@@ -4,7 +4,7 @@ import type {AuthorizationServerProvider} from "./AuthorizationServerProvider.js
 /**
  * Uses a fallback provider when the primary provider fails because the metadata resource was not found (HTTP 404).
  *
- * It exists for authorization servers that do not serve the `/.well-known/lws-configuration` path required by {@link https://www.w3.org/TR/2026/WD-lws10-core-20260331/#x5-2-2-authorization-server-metadata LWS 1.0 Core § 5.2.2 Authorization Server Metadata}. For example, Inrupt ESS returns 404 there and serves only the {@link https://www.rfc-editor.org/rfc/rfc8414#section-3 RFC 8414 § 3} metadata at `/.well-known/oauth-authorization-server`. This is a workaround for a deviation from LWS 1.0 Core.
+ * It exists for authorization servers that do not serve the `/.well-known/lws-configuration` path required by {@link https://w3c.github.io/lws-protocol/lws10-oauth/#authorization-server-metadata LWS10-OAUTH Authorization Server Metadata}. For example, Inrupt ESS returns 404 there and serves only the {@link https://www.rfc-editor.org/rfc/rfc8414#section-3 RFC 8414 § 3} metadata at `/.well-known/oauth-authorization-server`. This is a workaround for a deviation from LWS10-OAUTH.
  *
  * Any other error from the primary provider is rethrown.
  */

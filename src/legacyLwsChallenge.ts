@@ -1,9 +1,11 @@
 import type {WWWAuthenticateChallenge} from "oauth4webapi"
 
 /**
+ * This is the authorization server discovery of the LWS 1.0 Core Working Draft of 2026-03-31 (§ 5.2.1). It is superseded by the {@link https://w3c.github.io/lws-protocol/lws10-oauth/#authorization-server-discovery LWS10-OAUTH authorization server discovery}, which uses the RFC 9728 `resource_metadata` parameter. It is kept for servers that still send `as_uri` and `realm`, such as Inrupt ESS.
+ *
  * The parameters of a storage server challenge as defined in {@link https://www.w3.org/TR/2026/WD-lws10-core-20260331/#x5-2-1-authorization-server-discovery LWS 1.0 Core § 5.2.1 Authorization Server Discovery}.
  */
-export interface LwsChallenge {
+export interface LegacyLwsChallenge {
     /**
      * The issuer of the authorization server that issues access tokens for the storage.
      */
@@ -20,7 +22,7 @@ export interface LwsChallenge {
  *
  * The `realm` parameter is from {@link https://www.rfc-editor.org/rfc/rfc6750#section-3 RFC 6750 § 3}. The `as_uri` parameter is from {@link https://docs.kantarainitiative.org/uma/wg/rec-oauth-uma-grant-2.0.html#rfc.section.3.2.1 UMA 2.0 Grant § 3.2.1}, which uses it with the `UMA` scheme.
  */
-export function findLwsChallenge(challenges: readonly WWWAuthenticateChallenge[]): LwsChallenge | undefined {
+export function findLegacyLwsChallenge(challenges: readonly WWWAuthenticateChallenge[]): LegacyLwsChallenge | undefined {
     for (const challenge of challenges) {
         if (challenge.scheme !== "bearer" && challenge.scheme !== "dpop") {
             continue
