@@ -5,8 +5,7 @@ import type { CodeProvider } from "./CodeProvider.js"
 import type { TokenProvider } from "./TokenProvider.js"
 import type { AuthorizationServerProvider } from "./AuthorizationServerProvider.js"
 import { ClientProvider } from "./ClientProvider.js"
-import { supportsOfflineAccess } from "./supportsOfflineAccess.js"
-import { withDPoPNonceRetry } from "./dpopNonce.js"
+import { refreshGrant, runAuthorizationCodeGrant } from "./authorizationCodeGrant.js"
 import { selectDPoPSigningAlgorithm } from "./selectDPoPSigningAlgorithm.js"
 import type { Cache } from "./Cache.js"
 import { MemoryCache } from "./MemoryCache.js"
@@ -100,68 +99,19 @@ export class DPoPTokenProvider implements TokenProvider {
         const authorizationServer = await this.#asProvider.getAuthorizationServer(issuer, request.signal)
 
         const clientRegistration = await this.#clientProvider.getClient(authorizationServer, this.#callbackUri, request.signal)
-        const [registeredRedirectUri] = clientRegistration.redirect_uris as string[]
-        const [registeredResponseType] = clientRegistration.response_types as string[]
 
         const dpopKey = await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false})
         const dpop = oauth.DPoP({}, dpopKey)
 
-        const codeVerifier = oauth.generateRandomCodeVerifier()
-        const nonce = oauth.generateRandomNonce()
-        const state = oauth.generateRandomState()
-
-        const scopes = ["openid", "webid"]
-        if (supportsOfflineAccess(authorizationServer)) {
-            scopes.push("offline_access")
-        }
-
-        const authorizationUrl = new URL(authorizationServer.authorization_endpoint!)
-        authorizationUrl.searchParams.set("client_id", clientRegistration.client_id)
-        authorizationUrl.searchParams.set("redirect_uri", registeredRedirectUri!)
-        authorizationUrl.searchParams.set("response_type", registeredResponseType!)
-        authorizationUrl.searchParams.set("scope", scopes.join(" "))
-        authorizationUrl.searchParams.set("prompt", "none")
-        authorizationUrl.searchParams.set("state", state)
-        authorizationUrl.searchParams.set("nonce", nonce)
-
-        if (authorizationServer.code_challenge_methods_supported !== undefined) {
-            if (authorizationServer.code_challenge_methods_supported.includes("S256")) {
-                authorizationUrl.searchParams.set("code_challenge_method", "S256")
-                authorizationUrl.searchParams.set("code_challenge", await oauth.calculatePKCECodeChallenge(codeVerifier))
-            } else {
-                authorizationUrl.searchParams.set("code_challenge_method", "plain")
-                authorizationUrl.searchParams.set("code_challenge", codeVerifier)
-            }
-        }
-
-        using authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
-
-        let authorizationCodeParams
-        try {
-            authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse.value), state)
-        } catch (e) {
-            if (
-                // Proper way
-                e instanceof oauth.AuthorizationResponseError && (e.error === "interaction_required" || e.error === "consent_required" || e.error === "login_required") ||
-
-                // Workaround ESS not returning `iss` in error response
-                // TODO: Eliminate once bug fixed
-                isEssMissingIssInteractionNeeded(e)
-            ) {
-                console.debug("Authorization server requires user interaction, retrying without prompt")
-
-                authorizationUrl.searchParams.delete("prompt")
-                using authorizationCodeResponse = await this.#codeProvider.getCode(authorizationUrl, request.signal)
-                authorizationCodeParams = oauth.validateAuthResponse(authorizationServer, clientRegistration, new URL(authorizationCodeResponse.value), state)
-            } else {
-                throw e
-            }
-        }
-
-        const tokenResult = await withDPoPNonceRetry(async () => {
-            const tokenResponse = await oauth.authorizationCodeGrantRequest(authorizationServer, clientRegistration, this.getClientAuth(authorizationServer.issuer, clientRegistration), authorizationCodeParams, this.#callbackUri, authorizationServer.code_challenge_methods_supported !== undefined ? codeVerifier : oauth.nopkce, {...this.#options, DPoP: dpop, signal: request.signal})
-
-            return await oauth.processAuthorizationCodeResponse(authorizationServer, clientRegistration, tokenResponse, {expectedNonce: this.nonceVerificationOverride(authorizationServer.issuer, nonce)})
+        const tokenResult = await runAuthorizationCodeGrant({
+            authorizationServer,
+            client: clientRegistration,
+            callbackUri: this.#callbackUri,
+            codeProvider: this.#codeProvider,
+            dpop,
+            scopes: ["openid", "webid"],
+            options: this.#options,
+            signal: request.signal,
         })
 
         return {created: Date.now(), tokenResult, dpopKey, client: clientRegistration, authorizationServer}
@@ -173,14 +123,15 @@ export class DPoPTokenProvider implements TokenProvider {
         }
 
         const dpop = oauth.DPoP({}, cached.dpopKey)
-        const options = {...this.#options, DPoP: dpop}
 
         let tokenResult: oauth.TokenEndpointResponse
         try {
-            tokenResult = await withDPoPNonceRetry(async () => {
-                const tokenResponse = await oauth.refreshTokenGrantRequest(cached.authorizationServer, cached.client, this.getClientAuth(cached.authorizationServer.issuer, cached.client), cached.tokenResult.refresh_token!, options)
-
-                return await oauth.processRefreshTokenResponse(cached.authorizationServer, cached.client, tokenResponse)
+            tokenResult = await refreshGrant({
+                authorizationServer: cached.authorizationServer,
+                client: cached.client,
+                refreshToken: cached.tokenResult.refresh_token,
+                dpop,
+                options: this.#options,
             })
         } catch (e) {
             await this.#cache.removeItem(issuer.href)
@@ -202,67 +153,6 @@ export class DPoPTokenProvider implements TokenProvider {
 
         return {created: Date.now(), tokenResult, dpopKey: cached.dpopKey, client: cached.client, authorizationServer: cached.authorizationServer}
     }
-
-    private getClientAuth(issuer: string, client: oauth.OmitSymbolProperties<oauth.Client>): oauth.ClientAuth {
-        const clientSecret = client.client_secret as string
-
-        if (client.token_endpoint_auth_method === "client_secret_basic") {
-            const clientSecretBasic = clientSecretBasicFor(issuer)
-            return clientSecretBasic(clientSecret)
-        }
-
-        return oauth.None()
-    }
-
-    private nonceVerificationOverride(issuer: string, nonce: string): string | typeof oauth.expectNoNonce {
-        // TODO: Expose or configure or fingerprint NSS
-        if (issuer === "https://datapod.igrant.io" || issuer === "https://solidweb.org") {
-            return oauth.expectNoNonce
-        }
-
-        return nonce
-    }
-}
-
-/**
- * @see Bug report at https://inrupt.atlassian.net/servicedesk/customer/portal/4/FEEDBACK-445
- * @see Bug repro at https://gist.github.com/langsamu/ac55045a6ddc5893000b722429146b3a#file-iss_missing_error_callback-html
- * @see Spec https://www.rfc-editor.org/rfc/rfc9207.html#name-response-parameter-iss
- */
-function isEssMissingIssInteractionNeeded(e: unknown) {
-    try {
-        return ((((e as oauth.OperationProcessingError).cause as any).parameters) as URLSearchParams).get("error") === "interaction_required"
-    } catch {
-        return false
-    }
-}
-
-/**
- * A variation of the original from oauth4webapi that does not url encode Id and secret.
- *
- * @remarks PodSpaces (ESS) seems to fail when spec is followed.
- *
- * @see Original code at https://github.com/panva/oauth4webapi/blob/b914d175a58a1738b65a360dc2f28d6c0f88a720/src/index.ts#L1777
- * @see Bug report at https://inrupt.atlassian.net/servicedesk/customer/portal/4/FEEDBACK-443
- * @see Bug repro at https://gist.github.com/langsamu/ac55045a6ddc5893000b722429146b3a#file-podspaces_client_auth_bug-html
- * @see Spec https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3.1
- */
-function NoUrlEncodeClientSecretBasic(clientSecret: string): oauth.ClientAuth {
-    return function (_, client, __, headers) {
-        console.debug("Using non-conforming (no url encoding) client secret basic token authentication")
-        headers.set("Authorization", `Basic ${btoa(`${client.client_id}:${clientSecret}`)}`);
-    };
-}
-
-// TODO: Eliminate once bug fixed
-function clientSecretBasicFor(issuer: string): (clientSecret: string) => oauth.ClientAuth {
-    // TODO: Better fingerprinting ESS
-    if (issuer.includes("login.inrupt.com")) {
-        console.debug("Using token authentication workaround for ESS")
-        return NoUrlEncodeClientSecretBasic
-    }
-
-    return oauth.ClientSecretBasic
 }
 
 function isExpired(tokenData: DPoPTokenCacheEntry) {
