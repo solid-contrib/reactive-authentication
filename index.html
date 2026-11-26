@@ -25,7 +25,15 @@
                 DynamicRegistrationClientProvider,
                 ReactiveFetchManager,
                 PatternCacheKeyProvider,
-                DiscoveryAuthorizationServerProvider
+                DiscoveryAuthorizationServerProvider,
+                FallbackAuthorizationServerProvider,
+                LwsDiscoveryAuthorizationServerProvider,
+                IdTokenSubjectTokenProvider,
+                TokenExchangeTokenProvider,
+                LwsTokenExchangeTargetProvider,
+                LwsStorageRootProvider,
+                CachingStorageRootProvider,
+                essDPoPAdapter
             } from "./dist/mod.js"
             import "./dist/registerElements.js"
 
@@ -53,7 +61,19 @@
 
             const dPoPTokenProvider = new DPoPTokenProvider(callbackUri, ui, issuerProvider, cachingASProvider, cachingClientProvider)
 
-            const fetch = new ReactiveFetchManager([dPoPTokenProvider]).fetch
+            const lwsIssuerProvider = {
+                async getIssuer(request) {
+                    if (new URL(request.url).origin === "https://storage.odi.ess.solid-experiments.org") {
+                        return new URL("https://openid.odi.ess.solid-experiments.org")
+                    }
+                    return await issuerProvider.getIssuer(request)
+                }
+            }
+            const lwsASProvider = new CachingAuthorizationServerProvider(new FallbackAuthorizationServerProvider(new LwsDiscoveryAuthorizationServerProvider, new DiscoveryAuthorizationServerProvider(undefined, "oauth2")))
+            const idTokenProvider = new IdTokenSubjectTokenProvider(callbackUri, ui, lwsIssuerProvider, cachingASProvider, cachingClientProvider)
+            const lwsTokenProvider = new TokenExchangeTokenProvider(new LwsTokenExchangeTargetProvider(new CachingStorageRootProvider(new LwsStorageRootProvider)), idTokenProvider, lwsASProvider, undefined, undefined, essDPoPAdapter)
+
+            const fetch = new ReactiveFetchManager([lwsTokenProvider, dPoPTokenProvider]).fetch
 
             /* Page functionality: Buttons */
             document.addEventListener("DOMContentLoaded", () =>
