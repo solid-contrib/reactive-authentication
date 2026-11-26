@@ -3,7 +3,11 @@
     <head>
         <meta charset="UTF-8">
         <title>Authorization Code callback</title>
-        <script>opener.postMessage(location.href)</script>
+        <script type="module">
+            import { processAuthorizationResponse } from "./dist/AuthorizationCodeFlow.js"
+
+            processAuthorizationResponse()
+        </script>
     </head>
     <body></body>
 </html>
