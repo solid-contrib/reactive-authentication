@@ -1,4 +1,5 @@
 import * as oauth from "oauth4webapi"
+import { parseChallenges } from "./parseChallenges.js"
 import { CodeProvider } from "./CodeProvider.js"
 import { TokenProvider } from "./TokenProvider.js"
 
@@ -35,13 +36,13 @@ export class BearerTokenProvider implements TokenProvider {
         return "http://localhost:8080/callback.html"
     }
 
-    async matches(request: Request, challenges: readonly oauth.WWWAuthenticateChallenge[]): Promise<boolean> {
+    async matches(request: Request, response: Response): Promise<boolean> {
         // TODO: Remove server idiosyncrasy
         if (request.url.includes(".solidweb.org")) {
             return false
         }
 
-        return challenges.some(({scheme}) => scheme === "bearer")
+        return parseChallenges(response.headers.get("WWW-Authenticate")).some(({scheme}) => scheme === "bearer")
     }
 
     async upgrade(request: Request): Promise<Request> {
