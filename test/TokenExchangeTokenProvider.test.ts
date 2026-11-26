@@ -6,7 +6,7 @@ import type {AuthorizationServerProvider} from "../src/AuthorizationServerProvid
 import {ReactiveAuthenticationError} from "../src/ReactiveAuthenticationError.js"
 import type {SubjectToken, SubjectTokenProvider} from "../src/SubjectTokenProvider.js"
 import type {TokenExchangeTarget, TokenExchangeTargetProvider} from "../src/TokenExchangeTargetProvider.js"
-import {TokenExchangeTokenProvider} from "../src/TokenExchangeTokenProvider.js"
+import {type TokenExchangeDPoPAdapter, TokenExchangeTokenProvider} from "../src/TokenExchangeTokenProvider.js"
 
 const requested = "https://storage.example/storage_1/photos/img.jpg"
 const resource = "https://storage.example/storage_1"
@@ -22,6 +22,8 @@ type Behavior = {
     matches?: boolean,
     target?: (request: Request) => TokenExchangeTarget,
     dpopAlgs?: string[],
+    boundKey?: CryptoKeyPair,
+    dpopAdapter?: TokenExchangeDPoPAdapter,
 }
 
 function setup(behavior: Behavior = {}) {
@@ -55,7 +57,7 @@ function setup(behavior: Behavior = {}) {
     }
     const subjectTokenProvider: SubjectTokenProvider = {
         async getSubjectToken() {
-            return {token: `subject-${++subjectCounter}`, type: "urn:ietf:params:oauth:token-type:id_token"}
+            return {token: `subject-${++subjectCounter}`, type: "urn:ietf:params:oauth:token-type:id_token", ...(behavior.boundKey && {dpopKey: behavior.boundKey})}
         },
         async invalidate(_, subjectToken) {
             invalidated.push(subjectToken)
@@ -67,7 +69,7 @@ function setup(behavior: Behavior = {}) {
         },
     }
 
-    const provider = new TokenExchangeTokenProvider(targetProvider, subjectTokenProvider, asProvider, options)
+    const provider = new TokenExchangeTokenProvider(targetProvider, subjectTokenProvider, asProvider, options, undefined, behavior.dpopAdapter)
 
     return {provider, tokenRequests, invalidated}
 }
@@ -240,6 +242,49 @@ describe("TokenExchangeTokenProvider", () => {
                 await provider.upgrade(request(), unauthorized())
 
                 assert.equal(tokenRequests[0]!.headers.has("DPoP"), false)
+            })
+
+            it("signs the token request and the presentation with the key the subject token is bound to", async () => {
+                const boundKey = await oauth.generateKeyPair("ES256")
+                const boundJwk = await crypto.subtle.exportKey("jwk", boundKey.publicKey)
+                const {provider, tokenRequests} = setup({boundKey, tokenType: "DPoP"})
+
+                const upgraded = await provider.upgrade(request(), unauthorized())
+
+                for (const proof of [tokenRequests[0]!.headers.get("DPoP")!, upgraded.headers.get("DPoP")!]) {
+                    const {jwk} = decode(proof).header
+                    assert.equal(jwk.x, boundJwk.x)
+                    assert.equal(jwk.y, boundJwk.y)
+                }
+            })
+
+            it("sends the token request with the handle from the DPoP adapter", async () => {
+                const adapted: SubjectToken[] = []
+                const {provider, tokenRequests} = setup({
+                    dpopAlgs: ["ES256"],
+                    dpopAdapter: (handle, subjectToken) => {
+                        adapted.push(subjectToken)
+                        return handle
+                    },
+                })
+
+                await provider.upgrade(request(), unauthorized())
+
+                assert.equal(adapted.length, 1)
+                assert.equal(adapted[0]!.token, "subject-1")
+                assert.ok(tokenRequests[0]!.headers.get("DPoP"))
+            })
+
+            it("does not call the DPoP adapter without DPoP", async () => {
+                let called = false
+                const {provider} = setup({dpopAdapter: handle => {
+                    called = true
+                    return handle
+                }})
+
+                await provider.upgrade(request(), unauthorized())
+
+                assert.equal(called, false)
             })
 
             it("presents a DPoP token with a proof bound to the token and the request", async () => {

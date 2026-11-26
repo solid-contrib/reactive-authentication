@@ -29,17 +29,23 @@ export type TokenExchangeCacheEntry = {
 }
 
 /**
+ * Changes the DPoP handle of a token exchange request, for an authorization server that wants more than {@link https://www.rfc-editor.org/rfc/rfc9449.html#section-5 RFC 9449 § 5} in the proof of a token request.
+ */
+export type TokenExchangeDPoPAdapter = (handle: oauth.DPoPHandle, subjectToken: SubjectToken) => oauth.DPoPHandle
+
+/**
  * Obtains an access token for a resource by exchanging a subject token, as defined in {@link https://www.rfc-editor.org/rfc/rfc8693 RFC 8693}, and presents it as the authorization server says: as a `DPoP` token ({@link https://www.rfc-editor.org/rfc/rfc9449.html RFC 9449}) or as a `Bearer` token ({@link https://www.rfc-editor.org/rfc/rfc6750#section-2.1 RFC 6750 § 2.1}).
  *
  * The authorization server and the resource come from the {@link TokenExchangeTargetProvider}. The token request is a token exchange request as defined in {@link https://www.rfc-editor.org/rfc/rfc8693#section-2.1 RFC 8693 § 2.1}, with the `grant_type`, `resource`, `subject_token` and `subject_token_type` parameters. It has no `client_id` and no client authentication: the subject token identifies the client and the user.
  *
  * Access tokens are cached for each authorization server and resource until they expire. A response without `expires_in` counts as expired at once. A token exchange has no refresh token, so an expired access token is replaced with a new token exchange. If the authorization server rejects a token exchange with `invalid_grant` or `invalid_token`, for example because the subject token expired, the {@link SubjectTokenProvider} discards the subject token and the exchange runs once more with a new one.
  *
- * The token request carries a DPoP proof ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-5 RFC 9449 § 5}) when the authorization server advertises `dpop_signing_alg_values_supported`, and is a plain request otherwise. If the authorization server demands a nonce, the request runs once more with it ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-8 RFC 9449 § 8}). The `token_type` of the response, in any case, decides how the access token is presented. `DPoP` sends `Authorization: DPoP` and a new proof for each request, bound to the access token ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-7.1 RFC 9449 § 7.1}). `Bearer` sends `Authorization: Bearer`, also when the request had a DPoP proof. Any other type is an error (`oauth.UnsupportedOperationError`).
+ * The token request carries a DPoP proof ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-5 RFC 9449 § 5}) signed with the key that the subject token is bound to, if it is bound. Otherwise it carries a proof with a new key when the authorization server advertises `dpop_signing_alg_values_supported`, and is a plain request when it does not. If the authorization server demands a nonce, the request runs once more with it ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-8 RFC 9449 § 8}). The `token_type` of the response, in any case, decides how the access token is presented. `DPoP` sends `Authorization: DPoP` and a new proof for each request, bound to the access token ({@link https://www.rfc-editor.org/rfc/rfc9449.html#section-7.1 RFC 9449 § 7.1}). `Bearer` sends `Authorization: Bearer`, also when the request had a DPoP proof. Any other type is an error (`oauth.UnsupportedOperationError`).
  *
  * A persistent cache must hold non-extractable `CryptoKeyPair`s, so use structured storage such as IndexedDB, never `localStorage` or `sessionStorage`.
  *
  * @see {@link https://w3c.github.io/lws-protocol/lws10-oauth/#authorization-token-exchange LWS10-OAUTH Token Exchange}, which uses this exchange.
+ * @see {@link https://solidproject.org/TR/oidc#dpop-validation Solid-OIDC § 9.3 DPoP Validation}, which requires a DPoP proof when a DPoP-bound ID token is exchanged.
  */
 export class TokenExchangeTokenProvider implements TokenProvider {
     readonly #targetProvider: TokenExchangeTargetProvider
@@ -47,6 +53,7 @@ export class TokenExchangeTokenProvider implements TokenProvider {
     readonly #asProvider: AuthorizationServerProvider
     readonly #options: oauth.HttpRequestOptions<string, any> | undefined
     readonly #cache: Cache<TokenExchangeCacheEntry>
+    readonly #dpopAdapter: TokenExchangeDPoPAdapter
 
     /**
      * @param targetProvider Finds the authorization server and the resource of a request, and tells which responses it can handle.
@@ -54,13 +61,15 @@ export class TokenExchangeTokenProvider implements TokenProvider {
      * @param asProvider Finds the metadata of the authorization server, which has the token endpoint.
      * @param options HTTP options for requests to the authorization server, for example to allow plain HTTP (see `allowInsecureRequests`).
      * @param cache Where access tokens are kept, keyed by authorization server and resource. Defaults to a new {@link MemoryCache} owned by this instance. Never share one cache between clients or users: an entry is a usable credential, so a shared cache lets one client act as another.
+     * @param dpopAdapter Changes the DPoP handle of the token request. Defaults to no change.
      */
-    constructor(targetProvider: TokenExchangeTargetProvider, subjectTokenProvider: SubjectTokenProvider, asProvider: AuthorizationServerProvider, options?: oauth.HttpRequestOptions<string, any>, cache: Cache<TokenExchangeCacheEntry> = new MemoryCache) {
+    constructor(targetProvider: TokenExchangeTargetProvider, subjectTokenProvider: SubjectTokenProvider, asProvider: AuthorizationServerProvider, options?: oauth.HttpRequestOptions<string, any>, cache: Cache<TokenExchangeCacheEntry> = new MemoryCache, dpopAdapter: TokenExchangeDPoPAdapter = handle => handle) {
         this.#targetProvider = targetProvider
         this.#subjectTokenProvider = subjectTokenProvider
         this.#asProvider = asProvider
         this.#options = options
         this.#cache = cache
+        this.#dpopAdapter = dpopAdapter
     }
 
     async matches(request: Request, response: Response): Promise<boolean> {
@@ -119,10 +128,10 @@ export class TokenExchangeTokenProvider implements TokenProvider {
 
     async #sendExchange(authorizationServer: oauth.AuthorizationServer, resource: string, subjectToken: SubjectToken, signal: AbortSignal): Promise<TokenExchangeCacheEntry> {
         // No key when the authorization server does not advertise DPoP, so that DPoP is not offered to one that cannot handle it.
-        const dpopKey = authorizationServer.dpop_signing_alg_values_supported === undefined
+        const dpopKey = subjectToken.dpopKey ?? (authorizationServer.dpop_signing_alg_values_supported === undefined
             ? undefined
-            : await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false})
-        const dpop = dpopKey && oauth.DPoP(anonymousClient, dpopKey)
+            : await oauth.generateKeyPair(selectDPoPSigningAlgorithm(authorizationServer), {extractable: false}))
+        const dpop = dpopKey && this.#dpopAdapter(oauth.DPoP(anonymousClient, dpopKey), subjectToken)
 
         const result = await withDPoPNonceRetry(async () => {
             const response = await oauth.genericTokenEndpointRequest(authorizationServer, anonymousClient, noClientAuthentication, tokenExchangeGrantType, {
